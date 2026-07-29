@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.28)
+
+project(Q16TOOLS VERSION 1.0 DESCRIPTION "Toolkit for Q16 file format")
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+
+find_library(MATH_LIBRARY m)
+
+add_executable(gen_q16
+	gen_q16.c
+	q16_lib.c
+)
+
+target_link_libraries(gen_q16
+	PRIVATE ${MATH_LIBRARY}
+)
+
+add_executable(q16totga
+	dec_q16.c
+	q16_lib.c
+)
+
+target_link_libraries(q16totga
+	PRIVATE ${MATH_LIBRARY}
+)
+

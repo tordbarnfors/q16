@@ -6,7 +6,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-find_library(MATH_LIBRARY m)
+#find_library(MATH_LIBRARY m)
 
 add_executable(gen_q16
 	gen_q16.c
@@ -14,7 +14,7 @@ add_executable(gen_q16
 )
 
 target_link_libraries(gen_q16
-	PRIVATE ${MATH_LIBRARY}
+#	PRIVATE ${MATH_LIBRARY}
 )
 
 add_executable(q16totga
@@ -23,6 +23,14 @@ add_executable(q16totga
 )
 
 target_link_libraries(q16totga
-	PRIVATE ${MATH_LIBRARY}
+#	PRIVATE ${MATH_LIBRARY}
 )
 
+add_executable(q16bench
+	q16bench.c
+	q16_lib.c
+)
+
+target_link_libraries(q16bench
+#	PRIVATE ${MATH_LIBRARY}
+)

@@ -75,7 +75,7 @@ int main( int argc, char * argv[] )
 				uint8_t b = * pRead++ >> 3;
 				pRead += skipAlpha;
 
-				pRaw16[i] = (b << 11) | (g << 5) | r; 
+				pRaw16[i] = (r << 11) | (g << 5) | b; 
 			}
 
 			stbi_image_free(data);

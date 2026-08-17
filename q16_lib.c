@@ -97,6 +97,8 @@ int q16_setup( uint16_t palette[64], uint8_t pixelToIndexTable[65536] )
 
 	for (int i = 0; i < 64; i++)
 		palette[i] = 0;
+
+	return 0;
 }
 
 //____ q16_reset() ___________________________________________________________
@@ -105,6 +107,8 @@ int q16_reset( uint16_t palette[64])
 {
 	for (int i = 0; i < 64; i++)
 		palette[i] = 0;
+
+	return 0;
 }
 
 //____ q16_readHeader() ______________________________________________________
@@ -158,7 +162,7 @@ uint16_t * q16_decompressData( uint16_t * pDest, const uint8_t * pBegin, const u
 				for (int i = 0; i < nbPixels; i++)
 				{
 					lastPixel = *pRead++;
-					lastPixel |= (*pRead++) << 8;
+					lastPixel |= ((uint16_t)(*pRead++)) << 8;
 					*pDest++ = lastPixel;
 
 					palette[pixelToIndexTable[lastPixel]] = lastPixel;
@@ -181,15 +185,15 @@ uint16_t * q16_decompressData( uint16_t * pDest, const uint8_t * pBegin, const u
 			}
 			else
 			{
-				uint8_t r = (uint8_t) (lastPixel & 0x001F);
+				uint8_t r = (uint8_t) ((lastPixel >> 11) & 0x001F);
 				uint8_t g = (uint8_t) ((lastPixel >> 5) & 0x003F);
-				uint8_t b = (uint8_t) ((lastPixel >> 11) & 0x001F);
+				uint8_t b = (uint8_t) (lastPixel & 0x001F);
 
 				r += ((v >> 5) & 0x3) - 2;
 				g += ((v >> 2) & 0x7) - 4;
 				b += (v & 0x3) - 2;
 
-				lastPixel = (b << 11) | (g << 5) | r;
+				lastPixel = (r << 11) | (g << 5) | b;
 				*pDest++ = lastPixel;
 
 				palette[pixelToIndexTable[lastPixel]] = lastPixel;
@@ -212,7 +216,7 @@ uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint
 	while (pRead < pEnd)
 	{
 		uint16_t pixel = *pRead++;
-
+		 
 		if (pixel == lastPixel)
 		{
 			uint16_t count = 1;
@@ -229,16 +233,16 @@ uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint
 			uint8_t index = pixelToIndexTable[pixel];
 
 			if (palette[index] == pixel)
-				*pWrite++ = 0x40 | pixel;						// Store as index lookup
+				*pWrite++ = 0x40 | index;						// Store as index lookup
 			else
 			{
-				uint16_t lastR = lastPixel & 0x001F;
+				uint16_t lastR = (lastPixel >> 11) & 0x001F;
 				uint16_t lastG = (lastPixel >> 5) & 0x003F;
-				uint16_t lastB = (lastPixel >> 11) & 0x001F;
+				uint16_t lastB = lastPixel & 0x001F;
 
-				uint16_t r = pixel & 0x001F;
+				uint16_t r = (pixel >> 11) & 0x001F;
 				uint16_t g = (pixel >> 5) & 0x003F;
-				uint16_t b = (pixel >> 11) & 0x001F;
+				uint16_t b = pixel & 0x001F;
 
 				uint16_t diffR = r - lastR + 2;
 				uint16_t diffG = g - lastG + 4;
@@ -272,13 +276,13 @@ uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint
 						if (palette[nextIndex] == nextPixel)
 							break;				// Next pixel can be taken from index;
 
-						uint16_t nextR = nextPixel & 0x001F;
+						uint16_t nextR = (nextPixel >> 11) & 0x001F;
 						uint16_t nextG = (nextPixel >> 5) & 0x003F;
-						uint16_t nextB = (nextPixel >> 11) & 0x001F;
+						uint16_t nextB = nextPixel & 0x001F;
 
-						uint16_t diffR = nextR - r + 2;
+						uint16_t diffR = nextB - b + 2;
 						uint16_t diffG = nextG - g + 4;
-						uint16_t diffB = nextB - b + 2;
+						uint16_t diffB = nextR - r + 2;
 
 						if (diffR < 4 && diffG < 8 && diffB < 4)
 							break;				// Next pixel can be stored as RGB-delta.

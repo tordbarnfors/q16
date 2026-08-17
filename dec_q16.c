@@ -209,22 +209,28 @@ int determine_output_format( const char * pNameOfPrg )
 {
 	printf( "Name of prg = '%s\n", pNameOfPrg );
 
-	int ofs = strlen(pNameOfPrg) - 8;
+	int len = strlen(pNameOfPrg);
+	int sub = 8;
+
+	if (strcmp(".exe", pNameOfPrg + len - 4) == 0)
+		sub = 12;
+
+	int ofs = strlen(pNameOfPrg) - sub;
 	if( ofs < 0 )
 		return UNKNOWN;
 
 	pNameOfPrg += ofs;
 
-	if( strcmp("q16topng",pNameOfPrg) == 0 )
+	if( strncmp("q16topng",pNameOfPrg, 8) == 0 )
 		return PNG;
 
-	if( strcmp("q16tojpg",pNameOfPrg) == 0 )
+	if( strncmp("q16tojpg",pNameOfPrg, 8) == 0 )
 		return JPG;
 
-	if( strcmp("q16tobmp",pNameOfPrg) == 0 )
+	if( strncmp("q16tobmp",pNameOfPrg, 8) == 0 )
 		return BMP;
 
-	if( strcmp("q16totga",pNameOfPrg) == 0 )
+	if( strncmp("q16totga",pNameOfPrg, 8) == 0 )
 		return TGA;
 
 	return UNKNOWN;

@@ -72,12 +72,11 @@ int main( int argc, char * argv[] )
 		return -1;
 	}
 
-	uint8_t * pixelToIndexTable = malloc(65536);
+	uint8_t * staticTable = malloc(65536);
 
-	uint16_t palette[64];
-	uint16_t lastPixel = 0;
+	uint16_t instanceTable[65];
 
-	q16_setup( palette, pixelToIndexTable );
+	q16_setupStaticTable( staticTable );
 
 
 	for( int file = 1 ; file < argc ; file++ )
@@ -140,12 +139,22 @@ int main( int argc, char * argv[] )
 
 		uint16_t width, height;
 		uint8_t flags;
+		uint8_t version;
 
-		if( q16_readHeader( (q16_fileheader *) pLoadedQ16, &width, &height, &flags ) < 0 )
+		int res = q16_readHeader((q16_fileheader*)pLoadedQ16, &width, &height, &version, &flags);
+
+		if( res == -1 )
 		{
 			printf( "ERROR: '%s' is not a Q16 file.\n", pInputFilename );
 			goto cleanup;
 		}
+
+		if (res == -2)
+		{
+			printf("ERROR: '%s' is in version %d of the Q16 format. I only support <= %d.\n", pInputFilename, version, q16_version() );
+			goto cleanup;
+		}
+
 
 		int nbPixels = width*height;
 
@@ -157,11 +166,11 @@ int main( int argc, char * argv[] )
 		uint8_t * pBeginCompressedPixels = ((uint8_t*)pLoadedQ16) + sizeof(q16_fileheader);
 		uint8_t * pEndCompressedPixels = ((uint8_t*)pLoadedQ16) + size;
 
-		q16_reset( palette );
-		uint16_t * pEnd =	q16_decompressData( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
-						 palette, pixelToIndexTable );
+		q16_beginDecompression( instanceTable );
+		q16_result decompRes = q16_decompressData( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
+						 instanceTable, staticTable );
 
-		if( pEnd != pRawPixels + nbPixels )
+		if( decompRes.endOfStream != 1 || decompRes.writeEnd != pRawPixels )
 		{
 			printf( "ERROR: Something went wrong when decompressing pixels of '%s'\n", pInputFilename);
 			goto cleanup;
@@ -198,7 +207,7 @@ cleanup:
 		free( pConvertedSrc );
 	}
 
-	free( pixelToIndexTable );
+	free( staticTable );
 
 	return 0;
 }

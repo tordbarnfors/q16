@@ -34,12 +34,11 @@ int main( int argc, char * argv[] )
 		return -1;
 	}
 
-	uint8_t * pixelToIndexTable = malloc(65536);
+	uint8_t * staticTable = malloc(65536);
 
-	uint16_t palette[64];
-	uint16_t lastPixel = 0;
+	uint16_t instanceTable[65];
 
-	q16_setup( palette, pixelToIndexTable );
+	q16_setupStaticTable( staticTable );
 
 
 	for( int file = 1 ; file < argc ; file++ )
@@ -70,21 +69,23 @@ int main( int argc, char * argv[] )
 
 			stbi_image_free(data);
 
-			uint8_t * pCompressed = malloc(width*height*3 + 9);
+			int nbPixels = width * height;
 
-			q16_reset(palette);
-			lastPixel = 0;
+			uint8_t * pCompressed = malloc(nbPixels * 2 + nbPixels / 32 + 2 + 9);
 
-			uint8_t * pCompressedEnd = q16_compressData( pCompressed, pRawInput, pRawInput + width * height, palette, pixelToIndexTable, &lastPixel );
+			q16_beginCompression(instanceTable);
+
+			uint8_t * pCompressedEnd = q16_compressData( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
+			pCompressedEnd = q16_endCompression(pCompressedEnd);
 			strcpy((uint8_t*)pCompressedEnd, "NANANANA");
 
-			uint16_t* pRawOutput = malloc(width * height * 2 + 9);
+			uint16_t* pRawOutput = malloc(nbPixels * 2 + 9);
 
-			strcpy(((uint8_t*)pRawOutput) + width * height * 2, "DEADBEEF");
+			strcpy(((uint8_t*)pRawOutput) + nbPixels * 2, "DEADBEEF");
 
-			q16_reset(palette);
+			q16_beginDecompression(instanceTable);
 
-			uint16_t* pRawOutputEnd = q16_decompressData(pRawOutput, pCompressed, pCompressedEnd, palette, pixelToIndexTable);
+			q16_result res = q16_decompressData(pRawOutput, pCompressed, pCompressedEnd, instanceTable, staticTable );
 
 			uint16_t* pBefore = pRawInput;
 			uint16_t* pAfter = pRawOutput;
@@ -92,13 +93,13 @@ int main( int argc, char * argv[] )
 			while (* pAfter == * pBefore)
 				pBefore++,pAfter++;
 
-			if (pAfter < pRawOutputEnd)
+			if (pAfter < res.writeEnd)
 			{
 				printf("ERROR: Pixel start being different at offset %d.\n", (int) (pAfter - pRawOutput));
 			}
 			else
 			{
-				if (pAfter == pRawOutputEnd && strncmp(pAfter, "DEADBEEF", 8) == 0)
+				if (pAfter == res.writeEnd && strncmp((char*)pAfter, "DEADBEEF", 8) == 0)
 				{
 					printf("SUCCESS\n");
 				}
@@ -118,7 +119,7 @@ int main( int argc, char * argv[] )
 		}
 	}
 
-	free( pixelToIndexTable );
+	free( staticTable );
 
 	return 0;
 }

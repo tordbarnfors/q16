@@ -30,12 +30,11 @@ int main( int argc, char * argv[] )
 		return -1;
 	}
 
-	uint8_t * pixelToIndexTable = malloc(65536);
+	uint8_t * staticTable = malloc(65536);
 
-	uint16_t palette[64];
-	uint16_t lastPixel = 0;
+	uint16_t instanceTable[65];
 
-	q16_setup( palette, pixelToIndexTable );
+	q16_setupStaticTable( staticTable );
 
 
 	for( int file = 1 ; file < argc ; file++ )
@@ -61,9 +60,11 @@ int main( int argc, char * argv[] )
 		int width, height, channels;
 		stbi_uc* data = stbi_load(pInputFilename, &width, &height, &channels, 0);
 
+		int nbPixels = width * height;
+
 		if (data && (channels == 3 || channels == 4) )
 		{
-			uint16_t * 	pRaw16 = malloc(width * height*2);
+			uint16_t * 	pRaw16 = malloc(nbPixels*2);
 			uint8_t * 	pRead = (uint8_t*) data;
 
 			int skipAlpha = channels - 3;
@@ -80,9 +81,10 @@ int main( int argc, char * argv[] )
 
 			stbi_image_free(data);
 
-			uint8_t * pCompressed = malloc(width*height*3);
+			uint8_t * pCompressed = malloc(nbPixels*2 + nbPixels/32 + 2);	// +1 for nbPixels rounding, +1 for EOS.
 
-			uint8_t * pCompressedEnd = q16_compressData( pCompressed, pRaw16, pRaw16 + width * height, palette, pixelToIndexTable, &lastPixel );
+			q16_beginCompression(instanceTable);
+			uint8_t * pCompressedEnd = q16_endCompression( q16_compressData( pCompressed, pRaw16, pRaw16 + width * height, instanceTable, staticTable ) );
 
 			q16_fileheader header;
 			q16_writeHeader( &header, width, height, 0 );
@@ -123,7 +125,7 @@ cleanup:
 		}
 	}
 
-	free( pixelToIndexTable );
+	free( staticTable );
 
 	return 0;
 }

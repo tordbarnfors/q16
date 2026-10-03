@@ -10,12 +10,13 @@ a sprite sheet with alpha.
 
 For every image the following files are written (8.3 names for TOS):
 
-  NAME.Q16   Q16 (RGB565, lossless, with alpha if the image has alpha)
-  NAME.PNG   PNG of the image reduced to RGB565, i.e. the same pixels as Q16
-  NAME_9.JPG JPEG quality 90 (images without alpha only)
-  NAME_7.JPG JPEG quality 75 (images without alpha only)
+  NAME.Q16    Q16 (RGB565, lossless, with alpha if the image has alpha)
+  NAME.PNG    PNG of the image reduced to RGB565, i.e. the same pixels as Q16
+  NAME_90.JPG JPEG quality 90 (images without alpha only)
+  NAME_75.JPG JPEG quality 75 (images without alpha only)
 
-plus NAME_24.PNG, a PNG of the original 24/32-bit image, for size comparison.
+plus NAME_F.PNG, a PNG of the original full color 24/32-bit image, for size
+comparison.
 """
 
 import os, subprocess, sys
@@ -95,16 +96,16 @@ def sprites():
     return Image.alpha_composite(shadow, shapes)
 
 
-images = [("KODIM01", photo("kodim01")), ("KODIM03", photo("kodim03")), ("KODIM15", photo("kodim15")),
-          ("KODIM23", photo("kodim23")), ("GUI", gui()), ("SPRITES", sprites())]
+images = [("K01", photo("kodim01")), ("K03", photo("kodim03")), ("K15", photo("kodim15")),
+          ("K23", photo("kodim23")), ("GUI", gui()), ("SPRITES", sprites())]
 
 for name, img in images:
     base = os.path.join(out_dir, name)
-    img.save(base + "_24.PNG", optimize=True)
+    img.save(base + "_F.PNG", optimize=True)
     to565(img).save(base + ".PNG", optimize=True)
     if img.mode == "RGB":
-        img.save(base + "_9.JPG", quality=90)
-        img.save(base + "_7.JPG", quality=75)
-    subprocess.run([gen_q16, base + "_24.PNG"], check=True, stdout=subprocess.DEVNULL)
-    os.replace(base + "_24.q16", base + ".Q16")
+        img.save(base + "_90.JPG", quality=90)
+        img.save(base + "_75.JPG", quality=75)
+    subprocess.run([gen_q16, base + "_F.PNG"], check=True, stdout=subprocess.DEVNULL)
+    os.replace(base + "_F.q16", base + ".Q16")
     print(name, img.size, img.mode)

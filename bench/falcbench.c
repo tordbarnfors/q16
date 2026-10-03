@@ -3,7 +3,7 @@
 *   falcbench - Decoding speed benchmark for Atari Falcon (68030).
 *
 *   Decodes every .Q16, .PNG and .JPG file in the current directory (files
-*   ending with _24.PNG are skipped) with the following decoders, repeating
+*   ending with _F.PNG are skipped) with the following decoders, repeating
 *   each decode for at least two seconds:
 *
 *   Q16:  asm      - m68k/q16dec.s
@@ -410,7 +410,7 @@ int main( void )
 		for( k = 0 ; n[k] && k < 15 ; k++ )
 			upper[k] = (n[k] >= 'a' && n[k] <= 'z') ? n[k] - 32 : n[k];
 		upper[k] = 0;
-		if( (ends_with( upper, ".Q16" ) || ends_with( upper, ".PNG" ) || ends_with( upper, ".JPG" )) && !ends_with( upper, "_24.PNG" ) )
+		if( (ends_with( upper, ".Q16" ) || ends_with( upper, ".PNG" ) || ends_with( upper, ".JPG" )) && !ends_with( upper, "_F.PNG" ) )
 			strcpy( names[nbNames++], upper );
 	}
 	if( dir )

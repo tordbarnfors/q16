@@ -4,7 +4,7 @@
 Usage: make_table.py <image directory>
 
 Reads BENCH.TXT and the image files in the directory (for file sizes,
-including NAME_24.PNG which isn't benchmarked).
+including NAME_F.PNG which isn't benchmarked).
 """
 
 import os, re, sys
@@ -38,8 +38,8 @@ print("### File sizes\n")
 print("| Image | Q16 | PNG (RGB565) | PNG (24/32-bit) | JPEG q90 | JPEG q75 |")
 print("|---|---|---|---|---|---|")
 for n in names:
-    print("| %s | %s | %s | %s | %s | %s |" % (n, kb(size(n + ".Q16")), kb(size(n + ".PNG")), kb(size(n + "_24.PNG")),
-                                             kb(size(n + "_9.JPG")), kb(size(n + "_7.JPG"))))
+    print("| %s | %s | %s | %s | %s | %s |" % (n, kb(size(n + ".Q16")), kb(size(n + ".PNG")), kb(size(n + "_F.PNG")),
+                                             kb(size(n + "_90.JPG")), kb(size(n + "_75.JPG"))))
 
 print("\n### Decoding time\n")
 print("| Image | Q16 asm | Q16 C | PNG libpng | PNG stb | JPEG q90 turbo | JPEG q90 turbo565 | JPEG q90 stb | JPEG q75 turbo | JPEG q75 turbo565 | JPEG q75 stb |")
@@ -47,5 +47,5 @@ print("|---|---|---|---|---|---|---|---|---|---|---|")
 for n in names:
     print("| %s | %s |" % (n, " | ".join([ms(n + ".Q16", "asm"), ms(n + ".Q16", "C"),
                                           ms(n + ".PNG", "libpng"), ms(n + ".PNG", "stb"),
-                                          ms(n + "_9.JPG", "turbo"), ms(n + "_9.JPG", "turbo565"), ms(n + "_9.JPG", "stb"),
-                                          ms(n + "_7.JPG", "turbo"), ms(n + "_7.JPG", "turbo565"), ms(n + "_7.JPG", "stb")])))
+                                          ms(n + "_90.JPG", "turbo"), ms(n + "_90.JPG", "turbo565"), ms(n + "_90.JPG", "stb"),
+                                          ms(n + "_75.JPG", "turbo"), ms(n + "_75.JPG", "turbo565"), ms(n + "_75.JPG", "stb")])))

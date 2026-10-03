@@ -122,7 +122,7 @@ int q16_version(void)
 
 uint32_t q16_minPixelCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls)
 {
-	return nbPixels * 2 + nbPixels / 32 + nbCalls + 1;	// Worst case is storing everything as literals with a new opcode every 32 pixels and EOS at the end.
+	return nbPixels * 2 + nbPixels / 32 + nbCalls;		// Worst case is storing everything as literals with a new opcode every 32 pixels.
 }
 
 //____ q16_minAlphaCompressionBuffer() ________________________________________
@@ -215,9 +215,6 @@ q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const
 	uint16_t	  lastPixel = instanceData[0];
 	const uint8_t * pRead = pBegin;
 
-	q16_result res;
-	res.endOfStream = 0;
-
 	while (pRead < pEnd)
 	{
 		uint8_t v = *pRead++;
@@ -259,13 +256,6 @@ q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const
 			}
 			else
 			{
-				if (v == 0xD2)						// End of stream
-				{
-					res.endOfStream = 1;
-					break;
-				}
-
-
 				int index = v & 0x7F;
 				lastPixel += deltaTable[index][0];
 				lastPixel -= deltaTable[index][1];
@@ -277,6 +267,8 @@ q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const
 	}
 
 	instanceData[0] = lastPixel;
+
+	q16_result res;
 	res.readEnd = pRead;
 	res.writeEnd = pDest;
 	return res;
@@ -404,14 +396,6 @@ uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const ui
 	return pWrite;
 }
 
-//____ q16_endPixelCompression() ______________________________________________
-
-uint8_t* q16_endPixelCompression(uint8_t* pDest)
-{
-	*pDest++ = 0xD2;
-	return pDest;
-}
-
 //____ q16_compressAlpha() ____________________________________________________
 //
 // Port of the 1-byte RLE compressor from WonderGUI, without the primitive size byte.
@@ -518,6 +502,5 @@ q16_result q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const u
 	q16_result res;
 	res.readEnd = pRead;
 	res.writeEnd = pWrite;
-	res.endOfStream = 0;
 	return res;
 }

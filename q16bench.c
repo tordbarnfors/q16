@@ -83,7 +83,6 @@ int main( int argc, char * argv[] )
 			q16_beginPixelCompression(instanceTable);
 
 			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
-			pCompressedEnd = q16_endPixelCompression(pCompressedEnd);
 			strcpy((char*)pCompressedEnd, "NANANANA");
 
 			uint16_t* pRawOutput = malloc(nbPixels * 2 + 9);
@@ -109,8 +108,8 @@ int main( int argc, char * argv[] )
 				printf("ERROR: Wrote beyond end of pixel output.\n");
 			else if (nbWritten != nbPixels)
 				printf("ERROR: Decompressed %d pixels, expected %d.\n", nbWritten, nbPixels);
-			else if (!res.endOfStream || res.readEnd != pCompressedEnd)
-				printf("ERROR: End of pixel stream not detected where expected.\n");
+			else if (res.readEnd != pCompressedEnd)
+				printf("ERROR: Pixel decompression stopped before end of stream.\n");
 			else
 				pixelsOk = 1;
 

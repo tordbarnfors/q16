@@ -95,7 +95,7 @@ int main( int argc, char * argv[] )
 			uint8_t * pCompressedAlpha = malloc(q16_minAlphaCompressionBuffer(nbPixels, 1));
 
 			q16_beginPixelCompression(instanceTable);
-			uint8_t * pCompressedEnd = q16_endPixelCompression( q16_compressPixels( pCompressed, pRaw16, pRaw16 + nbPixels, instanceTable, staticTable ) );
+			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRaw16, pRaw16 + nbPixels, instanceTable, staticTable );
 
 			uint8_t * pCompressedAlphaEnd = pCompressedAlpha;
 			if( hasAlpha )

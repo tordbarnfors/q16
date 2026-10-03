@@ -184,7 +184,7 @@ int main( int argc, char * argv[] )
 		q16_result decompRes = q16_decompressPixels( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
 						 instanceTable, staticTable );
 
-		if( decompRes.endOfStream != 1 || decompRes.readEnd != pEndCompressedPixels || decompRes.writeEnd != pRawPixels + nbPixels )
+		if( decompRes.readEnd != pEndCompressedPixels || decompRes.writeEnd != pRawPixels + nbPixels )
 		{
 			printf( "ERROR: Something went wrong when decompressing pixels of '%s'\n", pInputFilename);
 			goto cleanup;

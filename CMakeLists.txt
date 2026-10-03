@@ -35,6 +35,11 @@ add_executable(gen_deltatab
 	gen_deltatab.c
 )
 
+add_executable(q16info
+	q16info.c
+	q16_lib.c
+)
+
 target_link_libraries(q16bench
 	PRIVATE $<$<BOOL:${MATH_LIBRARY}>:${MATH_LIBRARY}>
 )

@@ -97,7 +97,7 @@ int main( int argc, char * argv[] )
       if( pInputFilename[ofs] == '.' )
         break;
 
-    if( ofs != 0 )
+    if( ofs == 0 )
       ofs = len;
     
     strncpy( outputFilename, pInputFilename, ofs );
@@ -137,6 +137,12 @@ int main( int argc, char * argv[] )
 
 		// Read header
 
+		if( size < (long) sizeof(q16_fileheader) )
+		{
+			printf( "ERROR: '%s' is not a Q16 file.\n", pInputFilename );
+			goto cleanup;
+		}
+
 		uint16_t width, height;
 		uint8_t flags;
 		uint8_t version;
@@ -170,7 +176,7 @@ int main( int argc, char * argv[] )
 		q16_result decompRes = q16_decompressData( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
 						 instanceTable, staticTable );
 
-		if( decompRes.endOfStream != 1 || decompRes.writeEnd != pRawPixels )
+		if( decompRes.endOfStream != 1 || decompRes.writeEnd != pRawPixels + nbPixels )
 		{
 			printf( "ERROR: Something went wrong when decompressing pixels of '%s'\n", pInputFilename);
 			goto cleanup;
@@ -194,7 +200,24 @@ int main( int argc, char * argv[] )
 
 		// Save output file
 
-		if( stbi_write_tga(outputFilename, width, height, 3, pConvertedSrc) == 0 )
+		int writeOk;
+		switch( format )
+		{
+			case PNG:
+				writeOk = stbi_write_png(outputFilename, width, height, 3, pConvertedSrc, width*3);
+				break;
+			case JPG:
+				writeOk = stbi_write_jpg(outputFilename, width, height, 3, pConvertedSrc, 90);
+				break;
+			case BMP:
+				writeOk = stbi_write_bmp(outputFilename, width, height, 3, pConvertedSrc);
+				break;
+			default:
+				writeOk = stbi_write_tga(outputFilename, width, height, 3, pConvertedSrc);
+				break;
+		}
+
+		if( writeOk == 0 )
 		{
 			printf( "ERROR: Could not generate or write '%s'.\n", outputFilename );
 			goto cleanup;
@@ -204,6 +227,7 @@ int main( int argc, char * argv[] )
 			
 cleanup:
 		free( pLoadedQ16 );
+		free( pRawPixels );
 		free( pConvertedSrc );
 	}
 
@@ -216,8 +240,6 @@ cleanup:
 
 int determine_output_format( const char * pNameOfPrg )
 {
-	printf( "Name of prg = '%s\n", pNameOfPrg );
-
 	int len = strlen(pNameOfPrg);
 	int sub = 8;
 

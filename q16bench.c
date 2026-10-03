@@ -77,37 +77,33 @@ int main( int argc, char * argv[] )
 
 			uint8_t * pCompressedEnd = q16_compressData( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
 			pCompressedEnd = q16_endCompression(pCompressedEnd);
-			strcpy((uint8_t*)pCompressedEnd, "NANANANA");
+			strcpy((char*)pCompressedEnd, "NANANANA");
 
 			uint16_t* pRawOutput = malloc(nbPixels * 2 + 9);
 
-			strcpy(((uint8_t*)pRawOutput) + nbPixels * 2, "DEADBEEF");
+			strcpy(((char*)pRawOutput) + nbPixels * 2, "DEADBEEF");
 
 			q16_beginDecompression(instanceTable);
 
 			q16_result res = q16_decompressData(pRawOutput, pCompressed, pCompressedEnd, instanceTable, staticTable );
 
-			uint16_t* pBefore = pRawInput;
-			uint16_t* pAfter = pRawOutput;
+			int nbWritten = (int) (res.writeEnd - pRawOutput);
+			int nbCompared = nbWritten < nbPixels ? nbWritten : nbPixels;
 
-			while (* pAfter == * pBefore)
-				pBefore++,pAfter++;
+			int ofs = 0;
+			while (ofs < nbCompared && pRawOutput[ofs] == pRawInput[ofs])
+				ofs++;
 
-			if (pAfter < res.writeEnd)
-			{
-				printf("ERROR: Pixel start being different at offset %d.\n", (int) (pAfter - pRawOutput));
-			}
+			if (ofs < nbCompared)
+				printf("ERROR: Pixel start being different at offset %d.\n", ofs);
+			else if (strncmp(((char*)pRawOutput) + nbPixels * 2, "DEADBEEF", 8) != 0)
+				printf("ERROR: Wrote beyond end of output.\n");
+			else if (nbWritten != nbPixels)
+				printf("ERROR: Decompressed %d pixels, expected %d.\n", nbWritten, nbPixels);
+			else if (!res.endOfStream || res.readEnd != pCompressedEnd)
+				printf("ERROR: End of stream not detected where expected.\n");
 			else
-			{
-				if (pAfter == res.writeEnd && strncmp((char*)pAfter, "DEADBEEF", 8) == 0)
-				{
-					printf("SUCCESS\n");
-				}
-				else
-				{
-					printf("ERROR: Wrote beyond end of output.\n");
-				}
-			}
+				printf("SUCCESS\n");
 
 			free( pRawInput );
 			free(pRawOutput);

@@ -1,6 +1,8 @@
 
 #include "q16_lib.h"
 
+#include <stddef.h>
+
 #if defined(_WIN32)
 #	if defined(_M_X64) || defined(_M_IX86)
 #		define Q565_IS_BIG_ENDIAN 0

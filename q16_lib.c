@@ -473,10 +473,18 @@ uint8_t* q16_compressAlpha( uint8_t* pDest, const uint8_t* pBegin, const uint8_t
 	return pWrite;
 }
 
+//____ q16_beginAlphaDecompression() __________________________________________
+
+void q16_beginAlphaDecompression(uint8_t instanceData[1])
+{
+	instanceData[0] = 0;
+}
+
 //____ q16_decompressAlpha() __________________________________________________
 
-q16_result q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd )
+q16_result q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, uint8_t instanceData[1] )
 {
+	uint8_t lastAlpha = instanceData[0];
 	const uint8_t * pRead = pBegin;
 	uint8_t * pWrite = pDest;
 
@@ -495,14 +503,17 @@ q16_result q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const u
 
 			for( int i = 0 ; i < length ; i++ )
 				*pWrite++ = *pRead++;
+
+			lastAlpha = pRead[-1];
 		}
 		else
 		{
-			uint8_t v = pWrite[-1];
 			for( int i = 0 ; i < -length ; i++ )
-				*pWrite++ = v;
+				*pWrite++ = lastAlpha;
 		}
 	}
+
+	instanceData[0] = lastAlpha;
 
 	q16_result res;
 	res.readEnd = pRead;

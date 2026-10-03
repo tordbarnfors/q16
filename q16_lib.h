@@ -78,8 +78,7 @@ void 		q16_beginPixelDecompression(uint16_t instanceTable[65]);
 q16_result	q16_decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
 									uint16_t instanceTable[65], const uint8_t staticTable[65536] );
 
-// Alpha decompression has no instance data. A repeat refers to the byte at pDest[-1], so when
-// decompressing in chunks the output of each call must continue where the previous one ended.
 // endOfStream is not used for alpha and always set to 0.
-q16_result	q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd );
+void 		q16_beginAlphaDecompression(uint8_t instanceTable[1]);
+q16_result	q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, uint8_t instanceTable[1] );
 

@@ -199,7 +199,10 @@ int main( int argc, char * argv[] )
 			uint8_t * pBeginCompressedAlpha = pEndCompressedPixels;
 			uint8_t * pEndCompressedAlpha = pBeginCompressedAlpha + alphaBytes;
 
-			decompRes = q16_decompressAlpha( pRawAlpha, pBeginCompressedAlpha, pEndCompressedAlpha );
+			uint8_t alphaInstanceTable[1];
+
+			q16_beginAlphaDecompression( alphaInstanceTable );
+			decompRes = q16_decompressAlpha( pRawAlpha, pBeginCompressedAlpha, pEndCompressedAlpha, alphaInstanceTable );
 
 			if( decompRes.readEnd != pEndCompressedAlpha || decompRes.writeEnd != pRawAlpha + nbPixels )
 			{

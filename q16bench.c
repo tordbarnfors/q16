@@ -132,7 +132,10 @@ int main( int argc, char * argv[] )
 				pRawAlphaOutput = malloc(nbPixels + 9);
 				strcpy(((char*)pRawAlphaOutput) + nbPixels, "DEADBEEF");
 
-				res = q16_decompressAlpha(pRawAlphaOutput, pCompressedAlpha, pCompressedAlphaEnd);
+				uint8_t alphaInstanceTable[1];
+
+				q16_beginAlphaDecompression(alphaInstanceTable);
+				res = q16_decompressAlpha(pRawAlphaOutput, pCompressedAlpha, pCompressedAlphaEnd, alphaInstanceTable);
 
 				nbWritten = (int) (((uint8_t*)res.writeEnd) - pRawAlphaOutput);
 				nbCompared = nbWritten < nbPixels ? nbWritten : nbPixels;

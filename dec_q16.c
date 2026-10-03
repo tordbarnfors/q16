@@ -83,6 +83,7 @@ int main( int argc, char * argv[] )
 	{
 		void * pLoadedQ16 = NULL;
 		uint16_t * pRawPixels = NULL;
+		uint8_t * pRawAlpha = NULL;
 		uint8_t * pConvertedSrc = NULL;
 
 		// Set input and output filenames
@@ -144,10 +145,11 @@ int main( int argc, char * argv[] )
 		}
 
 		uint16_t width, height;
+		uint32_t pixelBytes, alphaBytes;
 		uint8_t flags;
 		uint8_t version;
 
-		int res = q16_readHeader((q16_fileheader*)pLoadedQ16, &width, &height, &version, &flags);
+		int res = q16_readHeader((q16_fileheader*)pLoadedQ16, &width, &height, &pixelBytes, &alphaBytes, &flags, &version);
 
 		if( res == -1 )
 		{
@@ -162,6 +164,12 @@ int main( int argc, char * argv[] )
 		}
 
 
+		if( (uint64_t) sizeof(q16_fileheader) + pixelBytes + alphaBytes > (uint64_t) size )
+		{
+			printf( "ERROR: '%s' is truncated.\n", pInputFilename );
+			goto cleanup;
+		}
+
 		int nbPixels = width*height;
 
 		// Unpack Q16 to raw 565 BGR.
@@ -170,21 +178,41 @@ int main( int argc, char * argv[] )
 
 
 		uint8_t * pBeginCompressedPixels = ((uint8_t*)pLoadedQ16) + sizeof(q16_fileheader);
-		uint8_t * pEndCompressedPixels = ((uint8_t*)pLoadedQ16) + size;
+		uint8_t * pEndCompressedPixels = pBeginCompressedPixels + pixelBytes;
 
-		q16_beginDecompression( instanceTable );
-		q16_result decompRes = q16_decompressData( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
+		q16_beginPixelDecompression( instanceTable );
+		q16_result decompRes = q16_decompressPixels( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
 						 instanceTable, staticTable );
 
-		if( decompRes.endOfStream != 1 || decompRes.writeEnd != pRawPixels + nbPixels )
+		if( decompRes.endOfStream != 1 || decompRes.readEnd != pEndCompressedPixels || decompRes.writeEnd != pRawPixels + nbPixels )
 		{
 			printf( "ERROR: Something went wrong when decompressing pixels of '%s'\n", pInputFilename);
 			goto cleanup;
 		}
 
-		// Convert pixels to 8-bit RGB
+		// Unpack alpha channel if present.
 
-		pConvertedSrc = (uint8_t*) malloc(nbPixels*3);
+		if( alphaBytes > 0 )
+		{
+			pRawAlpha = (uint8_t*) malloc(nbPixels);
+
+			uint8_t * pBeginCompressedAlpha = pEndCompressedPixels;
+			uint8_t * pEndCompressedAlpha = pBeginCompressedAlpha + alphaBytes;
+
+			decompRes = q16_decompressAlpha( pRawAlpha, pBeginCompressedAlpha, pEndCompressedAlpha );
+
+			if( decompRes.readEnd != pEndCompressedAlpha || decompRes.writeEnd != pRawAlpha + nbPixels )
+			{
+				printf( "ERROR: Something went wrong when decompressing alpha of '%s'\n", pInputFilename);
+				goto cleanup;
+			}
+		}
+
+		// Convert pixels to 8-bit RGB or RGBA
+
+		int channels = pRawAlpha ? 4 : 3;
+
+		pConvertedSrc = (uint8_t*) malloc(nbPixels*channels);
 
 		uint16_t * pSrc = pRawPixels;
 		uint8_t * pDst = pConvertedSrc;
@@ -196,6 +224,9 @@ int main( int argc, char * argv[] )
 			* pDst++ = (pixel >> 8) & 0xF8;		// red
 			* pDst++ = (pixel >> 3) & 0xFC;		// green
 			* pDst++ = (pixel << 3) & 0xF8;		// blue
+
+			if( pRawAlpha )
+				* pDst++ = pRawAlpha[i];		// alpha
 		}
 
 		// Save output file
@@ -204,16 +235,16 @@ int main( int argc, char * argv[] )
 		switch( format )
 		{
 			case PNG:
-				writeOk = stbi_write_png(outputFilename, width, height, 3, pConvertedSrc, width*3);
+				writeOk = stbi_write_png(outputFilename, width, height, channels, pConvertedSrc, width*channels);
 				break;
 			case JPG:
-				writeOk = stbi_write_jpg(outputFilename, width, height, 3, pConvertedSrc, 90);
+				writeOk = stbi_write_jpg(outputFilename, width, height, channels, pConvertedSrc, 90);	// JPG ignores alpha.
 				break;
 			case BMP:
-				writeOk = stbi_write_bmp(outputFilename, width, height, 3, pConvertedSrc);
+				writeOk = stbi_write_bmp(outputFilename, width, height, channels, pConvertedSrc);
 				break;
 			default:
-				writeOk = stbi_write_tga(outputFilename, width, height, 3, pConvertedSrc);
+				writeOk = stbi_write_tga(outputFilename, width, height, channels, pConvertedSrc);
 				break;
 		}
 
@@ -228,6 +259,7 @@ int main( int argc, char * argv[] )
 cleanup:
 		free( pLoadedQ16 );
 		free( pRawPixels );
+		free( pRawAlpha );
 		free( pConvertedSrc );
 	}
 

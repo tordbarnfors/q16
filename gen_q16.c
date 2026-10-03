@@ -58,36 +58,54 @@ int main( int argc, char * argv[] )
 	        char * pOutputFilename = temp;
 	
 		int width, height, channels;
-		stbi_uc* data = stbi_load(pInputFilename, &width, &height, &channels, 0);
+		stbi_uc* data = stbi_load(pInputFilename, &width, &height, &channels, 4);	// Always expand to RGBA.
 
 		int nbPixels = width * height;
 
-		if (data && (channels == 3 || channels == 4) )
+		if( data && (width > 65535 || height > 65535) )
+		{
+			printf( "ERROR: '%s' is %dx%d pixels. Max size for Q16 is 65535x65535.\n", pInputFilename, width, height );
+			stbi_image_free(data);
+		}
+		else if (data)
 		{
 			uint16_t * 	pRaw16 = malloc(nbPixels*2);
+			uint8_t *	pRawAlpha = malloc(nbPixels);
 			uint8_t * 	pRead = (uint8_t*) data;
 
-			int skipAlpha = channels - 3;
+			int hasAlpha = 0;
 
 			for( int i = 0 ; i < width * height ; i++ )
 			{
 				uint8_t r = * pRead++ >> 3;
 				uint8_t g = * pRead++ >> 2;
 				uint8_t b = * pRead++ >> 3;
-				pRead += skipAlpha;
+				uint8_t a = * pRead++;
 
 				pRaw16[i] = (r << 11) | (g << 5) | b; 
+				pRawAlpha[i] = a;
+
+				if( a != 255 )
+					hasAlpha = 1;		// Only store alpha channel if image isn't fully opaque.
 			}
 
 			stbi_image_free(data);
 
-			uint8_t * pCompressed = malloc(nbPixels*2 + nbPixels/32 + 2);	// +1 for nbPixels rounding, +1 for EOS.
+			uint8_t * pCompressed = malloc(q16_minPixelCompressionBuffer(nbPixels, 1));
+			uint8_t * pCompressedAlpha = malloc(q16_minAlphaCompressionBuffer(nbPixels, 1));
 
-			q16_beginCompression(instanceTable);
-			uint8_t * pCompressedEnd = q16_endCompression( q16_compressData( pCompressed, pRaw16, pRaw16 + width * height, instanceTable, staticTable ) );
+			q16_beginPixelCompression(instanceTable);
+			uint8_t * pCompressedEnd = q16_endPixelCompression( q16_compressPixels( pCompressed, pRaw16, pRaw16 + nbPixels, instanceTable, staticTable ) );
+
+			uint8_t * pCompressedAlphaEnd = pCompressedAlpha;
+			if( hasAlpha )
+				pCompressedAlphaEnd = q16_compressAlpha( pCompressedAlpha, pRawAlpha, pRawAlpha + nbPixels );
+
+			uint32_t pixelBytes = (uint32_t) (pCompressedEnd - pCompressed);
+			uint32_t alphaBytes = (uint32_t) (pCompressedAlphaEnd - pCompressedAlpha);
 
 			q16_fileheader header;
-			q16_writeHeader( &header, width, height, 0 );
+			q16_writeHeader( &header, width, height, pixelBytes, alphaBytes, 0 );
 
 
 			FILE * fp = fopen( pOutputFilename, "wb" );
@@ -104,7 +122,14 @@ int main( int argc, char * argv[] )
 				goto cleanup;
 			}	
 
-			if( fwrite( pCompressed, pCompressedEnd - pCompressed, 1, fp ) != 1 )
+			if( fwrite( pCompressed, pixelBytes, 1, fp ) != 1 )
+			{
+				printf( "ERROR: Couldn't write '%s'.\n", pOutputFilename );
+				fclose(fp);
+				goto cleanup;				
+			}
+
+			if( alphaBytes > 0 && fwrite( pCompressedAlpha, alphaBytes, 1, fp ) != 1 )
 			{
 				printf( "ERROR: Couldn't write '%s'.\n", pOutputFilename );
 				fclose(fp);
@@ -113,11 +138,16 @@ int main( int argc, char * argv[] )
 
 			fclose(fp);
 			
-			printf( "Converted '%s' to '%s'\n", pInputFilename, pOutputFilename );
+			if( hasAlpha )
+				printf( "Converted '%s' to '%s' (with alpha)\n", pInputFilename, pOutputFilename );
+			else
+				printf( "Converted '%s' to '%s'\n", pInputFilename, pOutputFilename );
 			
 cleanup:
 			free( pRaw16 );
+			free( pRawAlpha );
 			free( pCompressed );
+			free( pCompressedAlpha );
 		}
 		else
 		{

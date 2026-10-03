@@ -11,6 +11,21 @@
 	01 xxxxxx		Pixel from index
 	1 rrgggbb		Delta rgb values -2 > +1 for r and b, -4 > +3 for g
 	1 1010010		End of stream. This equals Delta with no change of r, g or b, which is forbidden.
+
+*
+*	Alpha compression format (1-byte RLE from WonderGUI, without the primitive size byte):
+*
+	0 - 127			Copy the following 1-128 alpha values verbatim.
+	-1 - -128		Repeat previous alpha value 1-128 times.
+
+*	Alpha stream has no end-of-stream marker, its length is given by alphaBytes in the header.
+*	A stream (and each separately compressed chunk) always starts with a verbatim copy.
+*
+*	File layout:
+*
+*	q16_fileheader		20 bytes.
+*	Pixel data			pixelBytes bytes, ending with the end-of-stream byte.
+*	Alpha data			alphaBytes bytes, 8-bit linear alpha. Only present if alphaBytes > 0.
 */
 
 
@@ -63,5 +78,8 @@ void 		q16_beginPixelDecompression(uint16_t instanceTable[65]);
 q16_result	q16_decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
 									uint16_t instanceTable[65], const uint8_t staticTable[65536] );
 
-q16_result	q16_decompressAlpha( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd );
+// Alpha decompression has no instance data. A repeat refers to the byte at pDest[-1], so when
+// decompressing in chunks the output of each call must continue where the previous one ended.
+// endOfStream is not used for alpha and always set to 0.
+q16_result	q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd );
 

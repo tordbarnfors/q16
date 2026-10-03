@@ -24,19 +24,20 @@ enum Q16_FLAGS
 typedef struct q16_fileheader_struct
 {
 	char		magic[4];		// magic bytes "Q565"
-	uint16_t	width;			// image width in pixels (little endian)
-	uint16_t	height;			// image height in pixels (little endian)
-	uint32_t	pixelBytes; 	// Bytes of pixel-data, including the end-of-stream byte. (littleEndian)
-	uint32_t	alphaBytes; 	// Bytes of alpha channel data. Set to 0 if no alpha channel provided. (littleEndian)
 	uint8_t		version;		// version of file format. Must be set to 1 for now.
 	uint8_t 	flags;			// See Q16_FLAGS
+	uint16_t	width;			// image width in pixels (little endian)
+	uint16_t	height;			// image height in pixels (little endian)
+	uint16_t	dummy;			// Padding for alignment of uint32_t below. Always 0.
+	uint32_t	pixelBytes; 	// Bytes of pixel-data, including the end-of-stream byte. (littleEndian)
+	uint32_t	alphaBytes; 	// Bytes of alpha channel data. Set to 0 if no alpha channel provided. (littleEndian)
 	
 } q16_fileheader;
 
 typedef struct q16_result_struct
 {
 	const uint8_t * readEnd;
-	uint16_t *		writeEnd;
+	void *			writeEnd;
 	int				endOfStream;	// 1 = true, 0 = false
 } q16_result;
 
@@ -55,7 +56,7 @@ uint8_t*	q16_compressPixels(	uint8_t* pDest, const uint16_t* pBegin, const uint1
 								uint16_t instanceTable[65], const uint8_t staticTable[65536]);
 uint8_t*	q16_endPixelCompression(uint8_t* pDest);
 
-uint8_t*	q16_compressAlpha(	uint8_t* pDest, const uint16_t* pBegin, const uint16_t* pEnd );
+uint8_t*	q16_compressAlpha(	uint8_t* pDest, const uint8_t* pBegin, const uint8_t* pEnd );
 
 
 void 		q16_beginPixelDecompression(uint16_t instanceTable[65]);

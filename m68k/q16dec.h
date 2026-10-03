@@ -27,12 +27,12 @@
 *           unsigned char * pPixelData = pFile + sizeof(q16_fileheader);
 *           unsigned char * pAlphaData = pPixelData + pixelBytes;
 *
-*           q16_decompressPixels( pPixels, pPixelData, pPixelData + pixelBytes,
-*                                 nbPixels, pStaticTable );
+*           q_decPix( pPixels, pPixelData, pPixelData + pixelBytes,
+*                     nbPixels, pStaticTable );
 *
 *           if( alphaBytes > 0 )
-*               q16_decompressAlpha( pAlpha, pAlphaData, pAlphaData + alphaBytes,
-*                                    nbPixels );
+*               q_decAlp( pAlpha, pAlphaData, pAlphaData + alphaBytes,
+*                         nbPixels );
 *       }
 *
 *   The caller should check that the file is at least
@@ -68,7 +68,7 @@ typedef struct q16_fileheader_struct
 
 int Q16CALL		q16_version( void );
 
-/* Fills in the 65536 byte table needed by q16_decompressPixels(). */
+/* Fills in the 65536 byte table needed by q_decPix(). */
 
 void Q16CALL	q16_setupStaticTable( unsigned char staticTable[65536] );
 
@@ -88,10 +88,10 @@ int Q16CALL		q16_readHeader( const q16_fileheader * header,
 *  nbPixels pixels. Never reads beyond pEnd nor writes beyond pDest + nbPixels.
 */
 
-int Q16CALL		q16_decompressPixels( unsigned short * pDest,
-									  const unsigned char * pBegin, const unsigned char * pEnd,
-									  unsigned long nbPixels,
-									  const unsigned char staticTable[65536] );
+int Q16CALL		q_decPix( unsigned short * pDest,
+						  const unsigned char * pBegin, const unsigned char * pEnd,
+						  unsigned long nbPixels,
+						  const unsigned char staticTable[65536] );
 
 /* Decodes the complete alpha data between pBegin and pEnd into exactly
 *  nbPixels alpha values at pDest.
@@ -99,8 +99,8 @@ int Q16CALL		q16_decompressPixels( unsigned short * pDest,
 *  nbPixels values. Never reads beyond pEnd nor writes beyond pDest + nbPixels.
 */
 
-int Q16CALL		q16_decompressAlpha( unsigned char * pDest,
-									 const unsigned char * pBegin, const unsigned char * pEnd,
-									 unsigned long nbPixels );
+int Q16CALL		q_decAlp( unsigned char * pDest,
+						  const unsigned char * pBegin, const unsigned char * pEnd,
+						  unsigned long nbPixels );
 
 #endif /* Q16DEC_DOT_H */

@@ -30,5 +30,5 @@ vasm (`vasmm68k_mot`):
 
 Every function is exported both with and without a leading underscore.
 
-Note that the DRI object format only keeps the first 8 characters of a symbol
-name, which makes `q16_decompressPixels` and `q16_decompressAlpha` collide.
+The decode functions are named `q_decPix` and `q_decAlp` to fit within the
+8 character symbol names of the DRI object format.

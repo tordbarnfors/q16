@@ -31,8 +31,8 @@
 	XDEF	q16_version,_q16_version
 	XDEF	q16_setupStaticTable,_q16_setupStaticTable
 	XDEF	q16_readHeader,_q16_readHeader
-	XDEF	q16_decompressPixels,_q16_decompressPixels
-	XDEF	q16_decompressAlpha,_q16_decompressAlpha
+	XDEF	q_decPix,_q_decPix
+	XDEF	q_decAlp,_q_decAlp
 
 
 ;____ q16_version() ______________________________________________________
@@ -152,13 +152,13 @@ rh_notq16:
 	rts
 
 
-;____ q16_decompressPixels() _____________________________________________
+;____ q_decPix() ________________________________________________________
 ;
-;	int q16_decompressPixels( unsigned short * pDest,
-;	                          const unsigned char * pBegin,
-;	                          const unsigned char * pEnd,
-;	                          unsigned long nbPixels,
-;	                          const unsigned char staticTable[65536] );
+;	int q_decPix( unsigned short * pDest,
+;	              const unsigned char * pBegin,
+;	              const unsigned char * pEnd,
+;	              unsigned long nbPixels,
+;	              const unsigned char staticTable[65536] );
 ;
 ;	Decodes the complete pixel stream between pBegin and pEnd into exactly
 ;	nbPixels big endian RGB565 pixels at pDest.
@@ -188,8 +188,8 @@ rh_notq16:
 DP_PALSIZE	EQU	128
 DP_ARGS		EQU	4+11*4+DP_PALSIZE	; Return address, saved registers, palette.
 
-q16_decompressPixels:
-_q16_decompressPixels:
+q_decPix:
+_q_decPix:
 	movem.l	d2-d7/a2-a6,-(sp)
 	lea	-DP_PALSIZE(sp),sp
 
@@ -398,12 +398,12 @@ dp_deltatable:
 	dc.w	$083E,$083F,$0840,$0841,$085E,$085F,$0860,$0861
 
 
-;____ q16_decompressAlpha() ______________________________________________
+;____ q_decAlp() ________________________________________________________
 ;
-;	int q16_decompressAlpha( unsigned char * pDest,
-;	                         const unsigned char * pBegin,
-;	                         const unsigned char * pEnd,
-;	                         unsigned long nbPixels );
+;	int q_decAlp( unsigned char * pDest,
+;	              const unsigned char * pBegin,
+;	              const unsigned char * pEnd,
+;	              unsigned long nbPixels );
 ;
 ;	Decodes the complete alpha stream between pBegin and pEnd into exactly
 ;	nbPixels alpha values at pDest.
@@ -426,8 +426,8 @@ dp_deltatable:
 
 DA_ARGS		EQU	4+5*4			; Return address, saved registers.
 
-q16_decompressAlpha:
-_q16_decompressAlpha:
+q_decAlp:
+_q_decAlp:
 	movem.l	d3-d4/d6-d7/a2,-(sp)
 
 	move.l	DA_ARGS(sp),a1		; pDest

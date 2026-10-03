@@ -97,7 +97,7 @@ def sprites():
 
 
 images = [("K01", photo("kodim01")), ("K03", photo("kodim03")), ("K15", photo("kodim15")),
-          ("K23", photo("kodim23")), ("GUI", gui()), ("SPRITES", sprites())]
+          ("K23", photo("kodim23")), ("GUI", gui()), ("SPRITE", sprites())]
 
 for name, img in images:
     base = os.path.join(out_dir, name)

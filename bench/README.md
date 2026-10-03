@@ -61,7 +61,45 @@ the images and run it.
 
 ## Results
 
-RESULTS
+Measured in Hatari 2.4.1 with EmuTOS 1.3. Times are per decode of the
+whole image. The photos and GUI are 640x480, the sprite sheet 320x240 with
+alpha (Q16 time includes decoding the alpha channel).
+
+### File sizes
+
+| Image | Q16 | PNG (RGB565) | PNG (24/32-bit) | JPEG q90 | JPEG q75 |
+|---|---|---|---|---|---|
+| GUI | 40 KB | 30 KB | 41 KB | 55 KB | 39 KB |
+| K01 | 358 KB | 379 KB | 610 KB | 120 KB | 72 KB |
+| K03 | 249 KB | 274 KB | 409 KB | 58 KB | 33 KB |
+| K15 | 307 KB | 302 KB | 482 KB | 73 KB | 41 KB |
+| K23 | 299 KB | 255 KB | 444 KB | 63 KB | 34 KB |
+| SPRITE | 55 KB | 30 KB | 37 KB | - | - |
+
+### Decoding time
+
+| Image | Q16 asm | Q16 C | PNG libpng | PNG stb | JPEG q90 turbo | JPEG q90 turbo565 | JPEG q90 stb | JPEG q75 turbo | JPEG q75 turbo565 | JPEG q75 stb |
+|---|---|---|---|---|---|---|---|---|---|---|
+| GUI | 132 ms | 242 ms | 4385 ms | 3410 ms | 9030 ms | 8170 ms | 16175 ms | 8670 ms | 7845 ms | 15290 ms |
+| K01 | 502 ms | 920 ms | 12735 ms | 18110 ms | 15980 ms | 11800 ms | 20490 ms | 13650 ms | 10410 ms | 17810 ms |
+| K03 | 411 ms | 748 ms | 9885 ms | 13425 ms | 13290 ms | 10115 ms | 17080 ms | 11360 ms | 9035 ms | 15510 ms |
+| K15 | 465 ms | 873 ms | 10200 ms | 14630 ms | 14430 ms | 10805 ms | 18105 ms | 12330 ms | 9575 ms | 16105 ms |
+| K23 | 481 ms | 933 ms | 9740 ms | 12645 ms | 14205 ms | 10550 ms | 17545 ms | 12330 ms | 9450 ms | 15680 ms |
+| SPRITE | 76.5 ms | 118 ms | 1830 ms | 1878 ms | - | - | - | - | - | - |
+
+### Summary
+
+* The asm Q16 decoder is **20-26 times faster than the fastest PNG decoder**
+  for the same pixels, and **19-60 times faster than the fastest JPEG
+  decoding** (libjpeg-turbo with fast settings directly to RGB565, which is
+  also what a Falcon viewer would use). A 640x480 photo takes about half a
+  second as Q16, against 10-13 seconds as PNG or 9-12 seconds as JPEG.
+* The asm decoder is 1.5-1.9 times faster than q16_lib.c compiled with GCC.
+* Q16 files are about the same size as PNG files with the same RGB565 pixels
+  for photos (-9% to +17%), but larger for the GUI screen (+32%) and the
+  sprite sheet (+84%), where PNG's deflate finds long repeated patterns.
+  JPEG files of photos are 3-9 times smaller than Q16, at the cost of
+  being lossy.
 
 ## Caveats
 

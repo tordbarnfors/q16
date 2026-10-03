@@ -20,7 +20,7 @@
 	-1 - -128		Repeat previous alpha value 1-128 times.
 
 *	Neither stream has an end-of-stream marker, their lengths are given by pixelBytes and alphaBytes in the header.
-*	A stream (and each separately compressed chunk) always starts with a verbatim copy.
+*	An alpha stream (and each separately compressed chunk) always starts with a verbatim copy.
 *
 *	File layout:
 *

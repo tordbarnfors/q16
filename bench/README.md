@@ -1,7 +1,8 @@
-# Falcon decoding benchmark
+# Benchmarks
 
 Compares decoding speed of Q16, PNG and JPEG on an Atari Falcon (68030 at
-16 MHz), emulated by Hatari.
+16 MHz), emulated by Hatari, and encoding and decoding speed and file sizes
+of Q16, QOI, PNG and JPEG on a PC (see [PC results](#pc-results)).
 
 | Format | Decoder | Output |
 |---|---|---|
@@ -100,6 +101,74 @@ alpha (Q16 time includes decoding the alpha channel).
   sprite sheet (+84%), where PNG's deflate finds long repeated patterns.
   JPEG files of photos are 3-9 times smaller than Q16, at the cost of
   being lossy.
+
+## PC results
+
+`pcbench.c` times encoding and decoding on a PC, using the same images. Q16,
+QOI and PNG encode exactly the same RGB565 pixels (expanded to 8 bits per
+channel for QOI and PNG); JPEG encodes the full color original.
+
+| Format | Codec |
+|---|---|
+| Q16 | q16_lib.c |
+| QOI | Own implementation of the [QOI specification](https://qoiformat.org/qoi-specification.pdf), in pcbench.c |
+| PNG | libpng 1.6.43 + zlib 1.3 (default compression level 6), and stb_image_write / stb_image 2.30 |
+| JPEG | libjpeg-turbo 2.1.5 (with SIMD), q90 and q75, 4:2:0, and stb_image 2.30 for decoding |
+
+Built with GCC 13 `-O2`, run single-threaded on a 2.1 GHz Intel Xeon (cloud
+VM). Each operation is repeated for at least 0.5 seconds, data is in memory.
+The size table adds the Pillow-optimized PNG (the one used on the Falcon) and
+lossless WebP of the RGB565 image (Pillow, default settings).
+
+    gcc -O2 -o pcbench pcbench.c ../q16_lib.c -lpng -ljpeg -lm
+    ./pcbench images K01 K03 K15 K23 GUI SPRITE > pcbench.csv
+    ./pc_table.py pcbench.csv images
+
+### Encoding time
+
+| Image | Q16 q16_lib | QOI qoi | PNG libpng | PNG stb | JPEG q90 libjpeg-turbo | JPEG q75 libjpeg-turbo |
+|---|---|---|---|---|---|---|
+| K01 | 2.27 ms | 3.95 ms | 112.7 ms | 63.6 ms | 1.19 ms | 0.98 ms |
+| K03 | 2.09 ms | 3.31 ms | 85.3 ms | 59.0 ms | 0.93 ms | 0.80 ms |
+| K15 | 2.20 ms | 3.67 ms | 98.9 ms | 64.6 ms | 1.01 ms | 0.89 ms |
+| K23 | 2.12 ms | 4.05 ms | 92.4 ms | 63.1 ms | 0.98 ms | 0.86 ms |
+| GUI | 0.28 ms | 0.78 ms | 8.45 ms | 16.7 ms | 0.78 ms | 0.75 ms |
+| SPRITE | 0.22 ms | 0.40 ms | 6.39 ms | 6.59 ms | - | - |
+
+### Decoding time
+
+| Image | Q16 q16_lib | QOI qoi | PNG libpng | PNG stb_image | JPEG q90 libjpeg-turbo | JPEG q90 stb_image | JPEG q75 libjpeg-turbo | JPEG q75 stb_image |
+|---|---|---|---|---|---|---|---|---|
+| K01 | 1.75 ms | 2.42 ms | 7.78 ms | 6.46 ms | 1.59 ms | 2.76 ms | 1.19 ms | 2.03 ms |
+| K03 | 1.54 ms | 2.13 ms | 5.50 ms | 5.24 ms | 1.21 ms | 1.92 ms | 0.90 ms | 1.61 ms |
+| K15 | 1.62 ms | 2.22 ms | 6.00 ms | 5.17 ms | 1.30 ms | 2.25 ms | 0.96 ms | 1.75 ms |
+| K23 | 1.66 ms | 2.30 ms | 5.60 ms | 4.65 ms | 1.28 ms | 2.10 ms | 0.95 ms | 1.69 ms |
+| GUI | 0.17 ms | 0.35 ms | 1.71 ms | 1.02 ms | 0.96 ms | 1.92 ms | 0.81 ms | 1.54 ms |
+| SPRITE | 0.12 ms | 0.21 ms | 0.82 ms | 0.65 ms | - | - | - | - |
+
+### File size
+
+| Image | Q16 | QOI | PNG libpng | PNG optimized | PNG stb | WebP lossless | PNG full color | JPEG q90 | JPEG q75 |
+|---|---|---|---|---|---|---|---|---|---|
+| K01 | 358 KB | 543 KB | 385 KB | 379 KB | 546 KB | 217 KB | 610 KB | 120 KB | 72 KB |
+| K03 | 249 KB | 365 KB | 284 KB | 274 KB | 415 KB | 145 KB | 409 KB | 58 KB | 33 KB |
+| K15 | 307 KB | 486 KB | 312 KB | 302 KB | 456 KB | 179 KB | 482 KB | 73 KB | 41 KB |
+| K23 | 299 KB | 494 KB | 266 KB | 255 KB | 401 KB | 160 KB | 444 KB | 63 KB | 34 KB |
+| GUI | 40 KB | 53 KB | 31 KB | 30 KB | 41 KB | 7 KB | 41 KB | 55 KB | 39 KB |
+| SPRITE | 55 KB | 93 KB | 31 KB | 30 KB | 41 KB | 23 KB | 37 KB | - | - |
+
+### Summary
+
+* Q16 encodes 30-50 times faster than libpng and 1.6-2.8 times faster than
+  QOI. libjpeg-turbo, with its SIMD code, encodes photos 2-2.6 times as fast
+  as Q16, but Q16 is faster for the GUI screen.
+* Q16 decodes 3-10 times faster than PNG and 1.4-2 times faster than QOI.
+  libjpeg-turbo decodes photos 1.1-1.7 times as fast as Q16 thanks to SIMD
+  (on the Falcon, without SIMD, it's 20-60 times slower), while Q16 is about
+  5 times faster for the GUI screen.
+* For RGB565 pictures Q16 files are 25-40% smaller than QOI, which is made for
+  8-bit channels, and about as large as PNG for photos. Lossless WebP is
+  40-80% smaller than Q16 but much slower to encode and decode.
 
 ## Caveats
 

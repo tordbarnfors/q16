@@ -28,7 +28,7 @@ and return 0 or -1 instead of a struct. The compress functions also handle a
 complete stream in one call and need no instance table.
 
 On an emulated Falcon the asm decoder is 1.5-1.9 times and the asm encoder
-1.6-1.7 times faster than q16_lib.c compiled with GCC, see
+1.6-2.8 times faster than q16_lib.c compiled with GCC, see
 [../bench](../bench/README.md).
 
 ## Assembling

@@ -1,7 +1,7 @@
 # Benchmarks
 
-Compares decoding speed of Q16, PNG and JPEG on an Atari Falcon (68030 at
-16 MHz), emulated by Hatari, and encoding and decoding speed and file sizes
+Compares decoding and encoding speed of Q16, PNG and JPEG on an Atari Falcon
+(68030 at 16 MHz), emulated by Hatari, and encoding and decoding speed and file sizes
 of Q16, QOI, PNG and JPEG on a PC (see [PC results](#pc-results)).
 
 | Format | Decoder | Output |
@@ -20,9 +20,14 @@ except libjpeg-turbo which uses its default `-O3`. libjpeg-turbo has no SIMD
 code for m68k and runs its portable C code. The program is linked with the
 plain 68000 MiNTLib since the 68020-60 MiNTLib requires an FPU.
 
+For each PNG file, the decoded pixels are also encoded with the asm
+(m68k/q16enc.s) and C Q16 encoders, libpng (default compression, level 6)
+and libjpeg-turbo (quality 90 and 75, not for the sprite sheet).
+
 Each file is decoded from memory, repeatedly for at least two seconds. Timing
 uses the 200 Hz system timer. The program also verifies that the asm and C Q16
-decoders give identical results, as do libpng and stb_image, and that each
+decoders give identical results, as do libpng and stb_image and the asm
+and C Q16 encoders, and that each
 Q16 file decodes to exactly the same pixels as the corresponding RGB565 PNG.
 
 ## Test images
@@ -81,12 +86,25 @@ alpha (Q16 time includes decoding the alpha channel).
 
 | Image | Q16 asm | Q16 C | PNG libpng | PNG stb | JPEG q90 turbo | JPEG q90 turbo565 | JPEG q90 stb | JPEG q75 turbo | JPEG q75 turbo565 | JPEG q75 stb |
 |---|---|---|---|---|---|---|---|---|---|---|
-| GUI | 132 ms | 242 ms | 4385 ms | 3410 ms | 9030 ms | 8170 ms | 16175 ms | 8670 ms | 7845 ms | 15290 ms |
-| K01 | 502 ms | 920 ms | 12735 ms | 18110 ms | 15980 ms | 11800 ms | 20490 ms | 13650 ms | 10410 ms | 17810 ms |
-| K03 | 411 ms | 748 ms | 9885 ms | 13425 ms | 13290 ms | 10115 ms | 17080 ms | 11360 ms | 9035 ms | 15510 ms |
-| K15 | 465 ms | 873 ms | 10200 ms | 14630 ms | 14430 ms | 10805 ms | 18105 ms | 12330 ms | 9575 ms | 16105 ms |
-| K23 | 481 ms | 933 ms | 9740 ms | 12645 ms | 14205 ms | 10550 ms | 17545 ms | 12330 ms | 9450 ms | 15680 ms |
-| SPRITE | 76.5 ms | 118 ms | 1830 ms | 1878 ms | - | - | - | - | - | - |
+| GUI | 132 ms | 242 ms | 4390 ms | 3440 ms | 9025 ms | 8080 ms | 16210 ms | 8665 ms | 7830 ms | 15395 ms |
+| K01 | 502 ms | 920 ms | 12565 ms | 18330 ms | 15930 ms | 11840 ms | 20555 ms | 13650 ms | 10530 ms | 17775 ms |
+| K03 | 410 ms | 748 ms | 9805 ms | 13630 ms | 13265 ms | 10095 ms | 17085 ms | 11340 ms | 9085 ms | 15590 ms |
+| K15 | 464 ms | 873 ms | 10110 ms | 14820 ms | 14395 ms | 10775 ms | 18130 ms | 12320 ms | 9665 ms | 16285 ms |
+| K23 | 480 ms | 933 ms | 9640 ms | 12855 ms | 14245 ms | 10625 ms | 17540 ms | 12340 ms | 9530 ms | 15655 ms |
+| SPRITE | 76.5 ms | 118 ms | 1825 ms | 1915 ms | - | - | - | - | - | - |
+
+### Encoding time
+
+Encoding the pixels decoded from NAME.PNG (RGB565). JPEG encodes them as 8-bit RGB.
+
+| Image | Q16 asm | Q16 C | PNG libpng | JPEG q90 turbo | JPEG q75 turbo |
+|---|---|---|---|---|---|
+| GUI | 405 ms | 707 ms | 26430 ms | 17370 ms | 17185 ms |
+| K01 | 1342 ms | 3775 ms | 160745 ms | 18965 ms | 17975 ms |
+| K03 | 1005 ms | 2730 ms | 135330 ms | 17675 ms | 17130 ms |
+| K15 | 1315 ms | 3275 ms | 148390 ms | 17965 ms | 17255 ms |
+| K23 | 1405 ms | 3225 ms | 145585 ms | 17740 ms | 17120 ms |
+| SPRITE | 233 ms | 375 ms | 14410 ms | - | - |
 
 ### Summary
 
@@ -96,6 +114,11 @@ alpha (Q16 time includes decoding the alpha channel).
   also what a Falcon viewer would use). A 640x480 photo takes about half a
   second as Q16, against 10-13 seconds as PNG or 9-12 seconds as JPEG.
 * The asm decoder is 1.5-1.9 times faster than q16_lib.c compiled with GCC.
+* Encoding with the asm encoder is **60-135 times faster than libpng** and
+  **12-42 times faster than libjpeg-turbo**. A 640x480 photo takes 1.0-1.4
+  seconds as Q16, against 2.2-2.7 minutes as PNG and about 18 seconds as
+  JPEG. The asm encoder is 1.6-2.8 times faster than q16_lib.c and produces
+  identical files.
 * Q16 files are about the same size as PNG files with the same RGB565 pixels
   for photos (-9% to +17%), but larger for the GUI screen (+32%) and the
   sprite sheet (+84%), where PNG's deflate finds long repeated patterns.

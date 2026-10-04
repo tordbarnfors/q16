@@ -1719,8 +1719,11 @@ tru_header:
 	MOVEA.L	file_buffer(PC),A1
 	CMPI.L	#'Indy',(A1)
 	BNE.W	exit
-	MOVE.W	4(A1),(picture_width).L
-	MOVE.W	4(A1),6(A0)
+	MOVE.W	4(A1),D0
+	MOVE.W	D0,(picture_width).L		; v1.2: width rounded up to 16
+	ADDI.W	#15,D0				; pixels, as fill_border needs it.
+	ANDI.W	#$FFF0,D0
+	MOVE.W	D0,6(A0)
 	MOVE.W	6(A1),8(A0)
 	RTS
 
@@ -1728,28 +1731,49 @@ tru_header:
 
 tru_load:
 	BSR.W	picture_position
-	MOVEA.L	file_buffer(PC),A0
+	MOVEM.L	D2-D6/A2-A3,-(A7)		; v1.2: lines of the real width,
+	MOVEA.L	file_buffer(PC),A0		; padded to 16 pixels.
 	LEA	$100(A0),A0
+	BSR.W	tc_lines
+.line:
+	MOVEA.L	A1,A3
+	MOVE.W	D4,D2
+.pixel:
+	MOVE.W	(A0)+,(A3)+
+	DBRA	D2,.pixel
+	BSR.W	tc_pad
+	DBRA	D5,.line
+	MOVEM.L	(A7)+,D2-D6/A2-A3
+	RTS
+
+;	For loaders of true colour pictures: A1 = picture_start, D3 = bytes per
+;	screen line, D4 = width - 1, D5 = height - 1, D6 = padding up to 16
+;	pixels.
+
+tc_lines:
 	MOVEA.L	picture_start(PC),A1
 	MOVEA.L	format(PC),A2
 	MOVE.W	8(A2),D5
 	SUBQ.W	#1,D5
 	MOVEQ	#0,D3
-	MOVE.W	6(A2),D4
-	CMP.W	#$280,D4
-	BGE.S	.wide
-	MOVE.W	#$280,D3
-	SUB.W	D4,D3
-	LSL.W	#1,D3
-.wide:
+	MOVE.W	screen_width(PC),D3
+	ADD.L	D3,D3
+	MOVE.W	picture_width(PC),D4
+	MOVE.W	6(A2),D6
+	SUB.W	D4,D6
 	SUBQ.W	#1,D4
-.line:
-	MOVE.W	D4,D2
-.pixel:
-	MOVE.W	(A0)+,(A1)+
-	DBRA	D2,.pixel
-	ADDA.W	D3,A1
-	DBRA	D5,.line
+	RTS
+
+;	Clears the padding at A3 (D6 pixels) and moves A1 to the next line.
+
+tc_pad:
+	MOVE.W	D6,D2
+	BRA.S	.test
+.pad:
+	CLR.W	(A3)+
+.test:
+	DBRA	D2,.pad
+	ADDA.L	D3,A1
 	RTS
 
 ;	GIF header parser: skips the global palette and any extension blocks and
@@ -2660,6 +2684,9 @@ raw_header:
 	ADD.W	D0,D1
 	BRA.S	.width
 .height:
+	MOVE.W	D1,(picture_width).L		; v1.2: width rounded up to 16
+	ADDI.W	#15,D1				; pixels, as fill_border needs it.
+	ANDI.W	#$FFF0,D1
 	MOVE.W	D1,6(A0)
 	MOVEQ	#0,D0
 	MOVEQ	#0,D1
@@ -2678,36 +2705,28 @@ raw_header:
 ;	POV raw loader: converts the 24-bit pixels to RGB565.
 
 raw_load:
-	MOVEA.L	raw_pixels(PC),A0
 	BSR.W	picture_position
-	MOVEA.L	picture_start(PC),A1
-	MOVEA.L	format(PC),A2
-	MOVE.W	8(A2),D5
-	SUBQ.W	#1,D5
-	MOVEQ	#0,D3
-	MOVE.W	6(A2),D4
-	CMP.W	#$280,D4
-	BGE.S	.wide
-	MOVE.W	#$280,D3
-	SUB.W	D4,D3
-	LSL.W	#1,D3
-.wide:
-	SUBQ.W	#1,D4
+	MOVEM.L	D2-D6/A2-A3,-(A7)		; v1.2: lines of the real width,
+	MOVEA.L	raw_pixels(PC),A0		; padded to 16 pixels, and D1
+	BSR.W	tc_lines			; cleared.
+	MOVEQ	#0,D1
 .line:
+	MOVEA.L	A1,A3
 	MOVE.W	D4,D2
 .pixel:
-	MOVE.B	(A0)+,D0
+	MOVE.B	(A0)+,D0			; Red
 	LSL.W	#5,D0
-	MOVE.B	(A0)+,D0
+	MOVE.B	(A0)+,D0			; Green
 	ANDI.W	#$FFFC,D0
 	LSL.W	#3,D0
-	MOVE.B	(A0)+,D1
+	MOVE.B	(A0)+,D1			; Blue
 	LSR.W	#3,D1
 	OR.W	D1,D0
-	MOVE.W	D0,(A1)+
+	MOVE.W	D0,(A3)+
 	DBRA	D2,.pixel
-	ADDA.W	D3,A1
+	BSR.W	tc_pad
 	DBRA	D5,.line
+	MOVEM.L	(A7)+,D2-D6/A2-A3
 	RTS
 
 ;	GEM (X)IMG header parser: size and depth. 24-bit pictures are shown on a
@@ -2758,9 +2777,9 @@ img_palette:
 	SUBQ.W	#1,D0
 	LEA	($FFFF9800).W,A0		; videl_palette[0] [Falcon]
 	LEA	palette(PC),A1
-.copy:
-	MOVE.L	(A0)+,(A1)+
-	DBRA	D1,.copy
+.copy:						; v1.2: was DBRA D1 (the number of
+	MOVE.L	(A0)+,(A1)+			; planes), which copied only the
+	DBRA	D0,.copy			; first few colours.
 	RTS
 
 .ximg:
@@ -3303,11 +3322,11 @@ pc1_load:
 	LEA	$22(A0),A0
 	MOVE.W	#$C7,D2
 .line:
-	LEA	line_source(PC),A1
+	MOVEA.L	line_source(PC),A1		; v1.2: was LEA, which unpacked
 	MOVE.L	A1,D7
 	ADDI.L	#$A0,D7
 	BSR.W	unpack_packbits
-	LEA	line_source(PC),A1
+	MOVEA.L	line_source(PC),A1		; over line_source and what follows.
 	MOVEQ	#19,D3
 .block:
 	MOVE.W	(A1)+,(A2)+
@@ -3467,10 +3486,11 @@ pi5_load:
 	DBRA	D0,.palette
 	BSR.W	picture_position
 	MOVEA.L	picture_start(PC),A1
-	MOVE.W	#$9600,D0
-.longword:
-	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,.longword
+	MOVE.L	#640*480/4-1,D0			; v1.2: was MOVE.W #$9600,D0 and
+.longword:					; DBRA, which copied half of the
+	MOVE.L	(A0)+,(A1)+			; picture.
+	SUBQ.L	#1,D0
+	BPL.S	.longword
 	RTS
 
 ;	Extended Degas .PI9: 320 x 240 in 256 colours, Falcon palette first.
@@ -4262,9 +4282,9 @@ c2p_dest:
 	ds.b	4
 c2p_blocks:
 	ds.b	2
-raw_pixels:					; POV raw pixels. Written as a long word, so it
-	ds.b	2
-img_line_bytes:					; overlaps this (only used by another format)
+raw_pixels:					; POV raw pixels (v1.2: was 2 bytes)
+	ds.b	4
+img_line_bytes:					; Bytes per IMG line, all planes
 	ds.b	4
 pal_source:					; st_palette parameters
 	ds.b	4

@@ -3,9 +3,10 @@
 
 Usage: mkimages.py <directory> [gen_q16]
 
-All pictures show the same pattern, 321 x 203 pixels: an odd width that
-isn't a multiple of 16 and a size smaller than the screen. The pattern is
-asymmetric, so flipped or skewed pictures are easy to spot.
+All pictures show the same pattern, mostly at 321 x 203 pixels: an odd
+width that isn't a multiple of 16 and a size smaller than the screen.
+Formats with a fixed size use that size. The pattern is asymmetric, so
+flipped or skewed pictures are easy to spot.
 
 Targa: Tbdco.TGA with b = bits per pixel (16, 24, 32), c = R (raw) or
 C (RLE), o = B (bottom-left origin, the default) or T (top-left origin).
@@ -21,6 +22,19 @@ GIF: G87.GIF (GIF87a), GINT.GIF (interlaced), G89.GIF (GIF89a with a
 graphic control and a comment extension before the image).
 
 Q16: Q16.Q16, written with gen_q16 (built from the repository) if given.
+
+Degas: D1.PI1 (low resolution), D1C.PC1 (compressed), D2C.PC2 (compressed
+medium resolution, shown with doubled lines), D4.PI4 (320 x 240, 256
+colours) and D5.PI5 (640 x 480, 256 colours). The ST palettes use 3 bits
+per component.
+
+GEM IMG (321 x 203): I4.IMG (4 planes without a palette, shown with the
+system palette, which is EmuTOS's desktop palette in Hatari), I4X.IMG
+(XIMG palette) and I1.IMG (monochrome). The data uses all IMG item types:
+solid runs, bit strings, pattern runs and vertical repeats.
+
+POV raw: RAW.RAW (321 x 203, 24 bits per pixel). IndyPaint: TRU.TRU
+(321 x 203).
 
 For each picture an expected RGB rendering is written as NAME.PNG
 (16-bit pictures are reduced to 15 or 16 bits per pixel).
@@ -143,6 +157,217 @@ reduce(bigpal.convert("RGB"), 6, 6, 6).save(os.path.join(d, "GBIG.PNG"))
 for n in ("G87", "GINT", "G89"):
     data = open(os.path.join(d, n + ".GIF"), "rb").read()
     print(n, data[:6].decode(), "interlaced" if n == "GINT" else "", "extension" if b"\x21\xf9" in data[:1000] else "")
+
+
+# ---- Bitplane formats
+
+# Falcon palette registers 0-15 in Hatari's Falcon with EmuTOS 1.3 on VGA
+# (the desktop palette), read with Supexec at the time Shower starts.
+EMUTOS_PALETTE = [(252, 252, 252), (252, 0, 0), (0, 252, 0), (252, 252, 0), (0, 0, 252), (252, 0, 252),
+                  (0, 252, 252), (184, 184, 184), (136, 136, 136), (168, 0, 0), (0, 168, 0), (168, 168, 0),
+                  (0, 0, 168), (168, 0, 168), (0, 168, 168), (0, 0, 0)]
+
+# 3 bits per component ST colours, as (r, g, b) 0-7.
+ST16 = [(7, 7, 7), (7, 0, 0), (0, 7, 0), (7, 7, 0), (0, 0, 7), (7, 0, 7), (0, 7, 7), (5, 5, 5),
+        (3, 3, 3), (7, 3, 0), (0, 4, 2), (4, 2, 6), (2, 2, 5), (6, 4, 4), (1, 5, 6), (0, 0, 0)]
+ST4 = [(7, 7, 7), (7, 0, 0), (0, 3, 7), (0, 0, 0)]
+
+
+def quantize(im, colours):
+    """Index image using the nearest of the given (r, g, b) 0-255 colours."""
+    cache = {}
+    def nearest(rgb):
+        if rgb not in cache:
+            cache[rgb] = min(range(len(colours)), key=lambda i: sum((a - b) ** 2 for a, b in zip(rgb, colours[i])))
+        return cache[rgb]
+    raw = im.tobytes()
+    idx = Image.new("P", im.size)
+    idx.putdata([nearest(tuple(raw[i:i + 3])) for i in range(0, len(raw), 3)])
+    return idx
+
+
+def expected(idx, colours):
+    out = Image.new("RGB", idx.size)
+    out.putdata([colours[i] for i in idx.getdata()])
+    return out
+
+
+def plane_lines(idx, planes):
+    """For each line, the bytes of each plane (MSB = leftmost pixel)."""
+    w, h = idx.size
+    px = list(idx.getdata())
+    nb = (w + 7) // 8
+    lines = []
+    for y in range(h):
+        row = px[y * w:(y + 1) * w] + [0] * (nb * 8 - w)
+        lines.append([bytes(sum(((row[x * 8 + b] >> p) & 1) << (7 - b) for b in range(8)) for x in range(nb))
+                      for p in range(planes)])
+    return lines
+
+
+def interleaved(idx, planes):
+    """ST/Falcon screen format: for each 16 pixels, one word per plane."""
+    out = bytearray()
+    for line in plane_lines(idx, planes):
+        for x in range(0, len(line[0]), 2):
+            for p in range(planes):
+                out += line[p][x:x + 2]
+    return bytes(out)
+
+
+def packbits(data):
+    out, i, n = bytearray(), 0, len(data)
+    while i < n:
+        j = i
+        while j + 1 < n and j - i < 127 and data[j + 1] == data[i]:
+            j += 1
+        if j > i:
+            out += bytes((257 - (j - i + 1),)) + data[i:i + 1]       # -(count - 1)
+            i = j + 1
+        else:
+            j = i
+            while j + 1 < n and j - i < 127 and data[j + 1] != data[j]:
+                j += 1
+            if j + 1 < n and j > i:
+                j -= 1
+            out += bytes((j - i,)) + data[i:j + 1]
+            i = j + 1
+    return bytes(out)
+
+
+def ste_words(colours):
+    return b"".join(struct.pack(">H", r << 8 | g << 4 | b) for r, g, b in colours) + b"\0\0" * (16 - len(colours))
+
+
+def st_rgb(colours):
+    return [(r << 5, g << 5, b << 5) for r, g, b in colours]       # As Shower's st_palette
+
+
+def falcon_palette(colours):
+    return b"".join(bytes((r & 0xFC, g & 0xFC, 0, b & 0xFC)) for r, g, b in colours) + b"\0" * (1024 - 4 * len(colours))
+
+
+def save(name, data, exp):
+    open(os.path.join(d, name), "wb").write(data)
+    exp.save(os.path.join(d, os.path.splitext(name)[0] + ".PNG"))
+
+
+# Degas low resolution, plain and compressed.
+low = quantize(pattern(320, 200), st_rgb(ST16))
+lowexp = expected(low, st_rgb(ST16))
+save("D1.PI1", struct.pack(">H", 0) + ste_words(ST16) + interleaved(low, 4), lowexp)
+pc1 = bytearray()
+for line in plane_lines(low, 4):
+    for plane in line:
+        pc1 += packbits(plane)
+save("D1C.PC1", struct.pack(">H", 0x8000) + ste_words(ST16) + bytes(pc1) + b"\0" * 32, lowexp)
+
+# Degas compressed medium resolution, 640 x 200 shown as 640 x 400.
+med = quantize(pattern(640, 200), st_rgb(ST4))
+pc2 = bytearray()
+for line in plane_lines(med, 2):
+    for plane in line:
+        pc2 += packbits(plane)
+# 2-plane screens use the STE palette registers, which have 4 bits per
+# component: 3-bit value v is shown as 2v / 15.
+save("D2C.PC2", struct.pack(">H", 0x8001) + ste_words(ST4) + bytes(pc2) + b"\0" * 32,
+     expected(med, [tuple(round(2 * c * 255 / 15) for c in rgb) for rgb in ST4]).resize((640, 400), Image.NEAREST))
+
+# Extended Degas in 256 colours with a Falcon palette.
+for name, size in (("D4.PI4", (320, 240)), ("D5.PI5", (640, 480))):
+    q = pattern(*size).quantize(256, dither=Image.Dither.NONE)
+    cols = [tuple(q.getpalette()[3 * i:3 * i + 3]) for i in range(256)]
+    save(name, falcon_palette(cols) + interleaved(q, 8), reduce(expected(q, cols), 6, 6, 6))
+
+
+# GEM IMG. Rows 150-169 repeat row 149 (vertical repeats) and a
+# checkerboard of colours 0 and 15 makes pattern runs.
+
+def img_items(data):
+    out, i, n = bytearray(), 0, len(data)
+    while i < n:
+        b = data[i]
+        if b in (0, 0xFF):
+            j = i
+            while j < n and data[j] == b and j - i < 127:
+                j += 1
+            out.append((0x80 if b else 0) | (j - i))                 # Solid run
+            i = j
+            continue
+        pat = data[i:i + 2]
+        if len(pat) == 2 and data[i:i + 6] == pat * 3:
+            k = 0
+            while data[i + 2 * k:i + 2 * k + 2] == pat and k < 255:
+                k += 1
+            out += bytes((0, k)) + pat                               # Pattern run
+            i += 2 * k
+            continue
+        j = i
+        while j < n and j - i < 255 and data[j] not in (0, 0xFF) and data[j:j + 6] != data[j:j + 2] * 3:
+            j += 1
+        j = max(j, i + 1)
+        out += bytes((0x80, j - i)) + data[i:j]                      # Bit string
+        i = j
+    return bytes(out)
+
+
+def write_img(name, idx, planes, palette=None):
+    w, h = idx.size
+    lines = plane_lines(idx, planes)
+    body, y = bytearray(), 0
+    while y < h:
+        count = 1
+        while y + count < h and lines[y + count] == lines[y] and count < 255:
+            count += 1
+        if count > 1:
+            body += bytes((0, 0, 0xFF, count))                       # Vertical repeat
+        for plane in lines[y]:
+            body += img_items(plane)
+        y += count
+    ximg = b""
+    if palette:
+        ximg = b"XIMG" + struct.pack(">H", 0) + b"".join(
+            struct.pack(">HHH", *[round(c * 1000 / 255) for c in rgb]) for rgb in palette)
+    hdr = struct.pack(">8H", 1, 8 + len(ximg) // 2, planes, 2, 85, 85, w, h)
+    open(os.path.join(d, name), "wb").write(hdr + ximg + bytes(body))
+
+
+def img_source(colours):
+    src = pattern()
+    for y in range(150, 170):
+        src.paste(src.crop((0, 149, W, 150)), (0, y))
+    idx = quantize(src, colours)
+    px = idx.load()
+    for y in range(175, 195):
+        for x in range(150, 280):
+            px[x, y] = 0 if (x + y) & 1 else len(colours) - 1
+    return idx
+
+
+idx = img_source(EMUTOS_PALETTE)
+write_img("I4.IMG", idx, 4)
+expected(idx, EMUTOS_PALETTE).save(os.path.join(d, "I4.PNG"))
+
+q = pattern().quantize(16, dither=Image.Dither.NONE)
+xcols = [tuple(q.getpalette()[3 * i:3 * i + 3]) for i in range(16)]
+idx = img_source(xcols)
+write_img("I4X.IMG", idx, 4, xcols)
+# Shower scales XIMG values (0-1000) with (v + 8) * 100 / 396.
+shown = [tuple(((round(c * 1000 / 255) + 8) * 100 // 396) & 0xFC for c in rgb) for rgb in xcols]
+expected(idx, shown).save(os.path.join(d, "I4X.PNG"))
+
+mono = img_source([(255, 255, 255), (0, 0, 0)])
+write_img("I1.IMG", mono, 1)
+expected(mono, [(255, 255, 255), (0, 0, 0)]).save(os.path.join(d, "I1.PNG"))
+
+# POV raw: width and height as text, then 24-bit pixels.
+save("RAW.RAW", b"%d %d\n" % (W, H) + im.tobytes(), reduce(im, 5, 6, 5))
+
+# IndyPaint: "Indy", width and height, then big endian RGB565 pixels from
+# offset 256.
+rgb565 = b"".join(struct.pack(">H", (r >> 3) << 11 | (g >> 2) << 5 | b >> 3) for r, g, b in
+                  zip(*[iter(im.tobytes())] * 3))
+save("TRU.TRU", (b"Indy" + struct.pack(">HH", W, H)).ljust(256, b"\0") + rgb565, reduce(im, 5, 6, 5))
 
 # Q16
 if len(sys.argv) > 2:

@@ -42,6 +42,20 @@ It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
   rounded down to 16 pixels instead of the padded BMP line length, the
   palette was assumed after a 40-byte info header, and compressed or
   non-256-colour files weren't rejected. Top-down BMP files are supported.
+* Found while naming the labels:
+  * IMG files without an XIMG palette got only the first few colours of the
+    system palette (`img_palette` looped with `DBRA D1`, the number of
+    planes, instead of `DBRA D0`).
+  * `pi5_load` copied half of a 640 x 480 picture in 256 colours, as its
+    `DBRA` counter can't count to 76800 long words.
+  * `pc1_load` unpacked each line over `line_source` and the variables
+    after it (`LEA` instead of `MOVEA.L`). It happened to work.
+  * `raw_header` wrote the 32-bit `raw_pixels` into a 16-bit variable,
+    overwriting `img_line_bytes`. Also harmless in practice.
+* Found by the tests for those: POV raw and IndyPaint pictures with a width
+  that isn't a multiple of 16 lost their first 16 columns to the border, as
+  their header parsers didn't round the width up like the others, and the
+  POV raw loader could corrupt the first pixels (an uncleared register).
 
 ## Labels
 
@@ -77,15 +91,18 @@ with Q16 pictures with and without alpha.
 
 `test/regress.py` is a regression test: it shows each picture made by
 `test/mkimages.py` (Targa in 16/24/32 bits, uncompressed and RLE, both
-origins; GIF87a, interlaced and GIF89a; BMP bottom-up and top-down; Q16;
-odd sizes and pictures larger than the screen) in Hatari on a VGA monitor
-and compares the screen pixel by pixel with the expected picture:
+origins; GIF87a, interlaced and GIF89a; BMP bottom-up and top-down; Degas
+PI1, PC1, PC2, PI4 and PI5; GEM IMG with 1 and 4 planes, with and without an
+XIMG palette, using all IMG item types; POV raw; IndyPaint; Q16; odd sizes
+and pictures larger than the screen) in Hatari on a VGA monitor and
+compares the screen pixel by pixel with the expected picture:
 
     python3 test/mkimages.py pics path/to/gen_q16
     EMUTOS=etos1024k.img python3 test/regress.py SHOWER.TTP pics results
 
-Version 1.2 passes all 21 pictures. Before these fixes, all Targa and BMP
-pictures, the interlaced GIF and the GIF89a picture failed.
+Version 1.2 passes all 31 pictures. Before the fixes, all Targa and BMP
+pictures, the interlaced GIF, the GIF89a picture, the PI5 picture, the IMG
+without a palette and the POV raw and IndyPaint pictures failed.
 
 ## Credits
 
@@ -100,14 +117,3 @@ and `regress.py` are the regression test.
 
 * 32-bit Targa pictures are shown without their alpha channel, unlike Q16
   pictures, which are blended against black.
-* Found while naming the labels, not fixed yet (also in version 1.1):
-  * `img_palette` copies the system palette for IMG files without an XIMG
-    palette with `DBRA D1` instead of `DBRA D0`, so only the first few
-    colours are set.
-  * `pc1_load` unpacks each line over `line_source` and the variables after
-    it (`LEA line_source(PC),A1` instead of `MOVEA.L line_source(PC),A1`).
-    It works because nothing uses them afterwards.
-  * `pi5_load` copies 153604 bytes, half of a 640 x 480 picture in 256
-    colours, as the DBRA counter can't count to 76800 long words.
-  * `raw_header` writes the 32-bit `raw_pixels` into a 16-bit variable,
-    overwriting `img_line_bytes` (only used for IMG files).

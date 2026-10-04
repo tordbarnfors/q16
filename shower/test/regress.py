@@ -80,10 +80,17 @@ def run(name):
 
 def compare(shot, expected):
     s = Image.open(shot).convert("RGB")
+    # In ST compatible modes (2 planes) Hatari's screenshot includes a left
+    # border, 86 pixels on VGA; TOS's own screens in that mode are placed
+    # the same way.
+    if s.size[0] > 640:
+        s = s.crop((s.size[0] - 640, 0, s.size[0], 480))
     e = Image.open(expected).convert("RGB")
-    # True color pictures are shown on a 320 x 240 screen, which Hatari
-    # doubles in both directions; 256 colour pictures on a 640 x 480 one.
-    scale = 1 if os.path.basename(expected)[0] in "GB" else 2
+    # True color pictures (Targa, Q16, POV raw) are shown on a 320 x 240
+    # screen, which Hatari doubles in both directions; pictures with bitplanes
+    # on a 640 x 480 one.
+    base = os.path.basename(expected)
+    scale = 2 if base.startswith(("T", "Q16", "RAW")) else 1
     sw, sh = s.size[0] // scale, s.size[1] // scale
     w, h = e.size
     rw = (w + 15) & ~15

@@ -340,3 +340,8 @@ Version 1.2 (2026):
 	   isn't a multiple of 16, and pictures stored top-down. Compressed
 	   and non-256-color BMP files are rejected instead of displayed as
 	   garbage.
+
+	+ IMG pictures without a palette get all colors of the system
+	   palette, PI5 pictures are shown completely (the lower half was
+	   missing), and POV raw and IndyPaint pictures with a width that
+	   isn't a multiple of 16 no longer lose their first 16 columns.

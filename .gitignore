@@ -66,6 +66,7 @@ plugins/zview/Q16.LDG
 plugins/zview/test/ZVTEST.PRG
 plugins/zview/zview-include/
 plugins/gemview/Q16.GVL
+plugins/gemview/Q16.GVS
 plugins/smurf/Q16.SIM
 plugins/smurf/Q16.SXM
 plugins/smurf/test/SMURFTST.TOS

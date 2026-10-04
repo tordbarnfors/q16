@@ -46,3 +46,10 @@ The GIF depacker in Shower is taken from TurboGIF by Sascha Springer.
 `test/` has the tools used for testing: `launch.s` assembles to LAUNCH.TOS,
 which runs a program with a command line in Hatari, and `showtest.py` runs
 Hatari, takes a screenshot of what's displayed and quits.
+
+## Known issues
+
+* Uncompressed Targa files with a width that isn't a multiple of 16 pixels
+  are displayed skewed, as the Targa loader reads lines of the width rounded
+  up to 16 pixels. This bug is in version 1.1 too and hasn't been changed.
+* Interlaced GIF files aren't displayed correctly (also in version 1.1).

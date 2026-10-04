@@ -25,8 +25,8 @@ It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
 * Targa: the loader (`tga_header`, `tga_load`) is rewritten. Version 1.1 skewed
   pictures with a width that isn't a multiple of 16 pixels, showed
   bottom-up pictures (the default origin) upside down, converted
-  uncompressed 16-bit pixels wrongly (`ADD.W D1,D0` instead of
-  `ADD.W D0,D0`), read the color map length as big endian and let RLE
+  uncompressed 16-bit pixels wrongly (`add.w d1,d0` instead of
+  `add.w d0,d0`), read the color map length as big endian and let RLE
   packets run past the picture. RLE pictures are now unpacked into a buffer
   of their own and converted like uncompressed ones, and 32-bit pictures
   are supported.
@@ -44,12 +44,12 @@ It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
   non-256-colour files weren't rejected. Top-down BMP files are supported.
 * Found while naming the labels:
   * IMG files without an XIMG palette got only the first few colours of the
-    system palette (`img_palette` looped with `DBRA D1`, the number of
-    planes, instead of `DBRA D0`).
+    system palette (`img_palette` looped with `dbra d1`, the number of
+    planes, instead of `dbra d0`).
   * `pi5_load` copied half of a 640 x 480 picture in 256 colours, as its
-    `DBRA` counter can't count to 76800 long words.
+    `dbra` counter can't count to 76800 long words.
   * `pc1_load` unpacked each line over `line_source` and the variables
-    after it (`LEA` instead of `MOVEA.L`). It happened to work.
+    after it (`lea` instead of `movea.l`). It happened to work.
   * `raw_header` wrote the 32-bit `raw_pixels` into a 16-bit variable,
     overwriting `img_line_bytes`. Also harmless in practice.
 * Found by the tests for those: POV raw and IndyPaint pictures with a width
@@ -67,6 +67,9 @@ description. Labels inside a function are local (they start with a dot,
 Devpac style), so only functions, variables and tables are global. A few
 numbered labels were offsets into a neighbouring variable and are now
 written as such, for example `screen+1` for the second byte of `screen`.
+
+The code is in lower case (mnemonics, registers, hex numbers) and laid out
+for a tab width of 4: operands in column 12, comments in column 48.
 
 The renaming was checked to use every local label only inside its own
 function, and the result assembles to exactly the same SHOWER.TTP as

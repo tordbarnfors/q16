@@ -2542,13 +2542,13 @@ make_c2p_tables:
 
 c2p_line:
 	movem.l	d0-d4/a0-a5,-(a7)
-	movea.l	c2p_source(pc),a0
+	movea.l	(c2p_source).l,a0
 	lea		work_tables(pc),a1
-	movea.l	c2p_dest(pc),a2
+	movea.l	(c2p_dest).l,a2
 	lea		$1000(a1),a3
 	lea		$1000(a3),a4
 	lea		$1000(a4),a5
-	move.w	c2p_blocks(pc),d4
+	move.w	(c2p_blocks).l,d4
 	subq.l	#1,d4
 	moveq	#0,d0
 	move.w	#$100,d3
@@ -3607,7 +3607,8 @@ put_320x200:
 ;____ Q16 support, added in v1.2 ____________________________________________
 ;
 ;	Q16 is RGB565 with optional 8-bit alpha, see q16_lib.h. The picture is
-;	decoded with q16dec.s into a temporary buffer and copied to the screen.
+;	decoded with q_decPixF (q16decf.s, no 64 KB table) and q_decAlp
+;	(q16dec.s) into temporary buffers and copied to the screen.
 ;	Alpha is blended against black.
 
 ;	Header parser. a0 = format table entry.
@@ -3668,13 +3669,6 @@ q16_load:
 	mulu.l	d6,d0
 	move.l	d0,(q16_pixels_count).l
 
-	move.l	#65536,-(a7)						; Table for q_decPix
-	move.w	#72,-(a7)							; Malloc
-	trap	#1
-	addq.l	#6,a7
-	move.l	d0,(q16_table).l
-	beq.w	.fail
-
 	move.l	(q16_pixels_count).l,d0				; Pixels
 	add.l	d0,d0
 	move.l	d0,-(a7)
@@ -3694,21 +3688,16 @@ q16_load:
 	beq.w	.fail
 .no_alpha:
 
-	move.l	(q16_table).l,-(a7)
-	bsr.w	q16_setupStaticTable
-	addq.l	#4,a7
-
-	move.l	(q16_table).l,-(a7)					; Decode pixels.
-	move.l	(q16_pixels_count).l,-(a7)
+	move.l	(q16_pixels_count).l,-(a7)			; Decode pixels. q_decPixF needs
 	movea.l	file_buffer(pc),a3
 	lea		20(a3),a3
 	move.l	a3,d0
 	add.l	(q16_pixel_bytes).l,d0
 	move.l	d0,-(a7)
-	move.l	a3,-(a7)
-	move.l	(q16_pixels).l,-(a7)
-	bsr.w	q_decPix
-	lea		20(a7),a7
+	move.l	a3,-(a7)							; no table, which would take
+	move.l	(q16_pixels).l,-(a7)				; longer to set up than it saves
+	bsr.w	q_decPixF							; for one picture.
+	lea		16(a7),a7
 	tst.w	d0
 	bne.w	.fail
 
@@ -3765,8 +3754,8 @@ q16_load:
 ;	Frees the temporary buffers.
 
 q16_free:
-	lea		(q16_table).l,a3
-	moveq	#2,d3
+	lea		(q16_pixels).l,a3
+	moveq	#1,d3
 .loop:
 	move.l	(a3),d0
 	beq.s	.next
@@ -3826,7 +3815,8 @@ q16_blend:
 	movem.l	(a7)+,d2-d7
 	rts
 
-	include	"../m68k/q16dec.s"
+	include	"../m68k/q16decf.s"					; q_decPixF
+	include	"../m68k/q16dec.s"					; q_decAlp
 
 	section	data
 skip_shiftmode:									; Restore the ST shift mode on exit if 0
@@ -4310,9 +4300,7 @@ q16_alpha_bytes:
 	ds.b	4
 q16_pixels_count:
 	ds.b	4
-q16_table:										; q16_table, q16_pixels and q16_alpha
-	ds.b	4									; must stay together, see q16_free.
-q16_pixels:
-	ds.b	4
+q16_pixels:										; q16_pixels and q16_alpha must
+	ds.b	4									; stay together, see q16_free.
 q16_alpha:
 	ds.b	4

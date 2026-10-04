@@ -16,8 +16,11 @@ Version 1.2 adds support for Q16 pictures (`.Q16`):
 
 * The format table has a new entry with a header parser (`q16_header`) and a
   loader (`q16_load`), following the same pattern as the Targa support.
-* The picture is decoded by `m68k/q16dec.s`, which is included into the
-  source, into a temporary buffer and copied to the screen.
+* The picture is decoded by `q_decPixF()` from `m68k/q16decf.s` and
+  `q_decAlp()` from `m68k/q16dec.s`, which are included into the source, into
+  temporary buffers and copied to the screen. `q_decPixF()` needs no 64 KB
+  table: for one picture, setting up the table would take longer than it
+  saves (see [../bench](../bench/README.md#static-table-or-hash-formula)).
 * Pictures with alpha are blended against black.
 
 It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
@@ -75,9 +78,10 @@ assembler sources (`m68k/`, the plugins) use the same layout.
 
 The renaming was checked to use every local label only inside its own
 function, and the result assembles to exactly the same SHOWER.TTP as
-before. The internal labels of `m68k/q16dec.s` and `m68k/q16enc.s`, which
-are included into the source, are local too; the GEM-View modules, the
-benchmark and Shower all build byte-identical to before.
+before. The internal labels of the shared decoder and encoder sources in
+`m68k/` (the decoders are included into the source) are local too; the
+GEM-View modules, the benchmark and Shower all built byte-identical to
+before.
 
 ## Building
 
@@ -98,14 +102,15 @@ with Q16 pictures with and without alpha.
 `test/mkimages.py` (Targa in 16/24/32 bits, uncompressed and RLE, both
 origins; GIF87a, interlaced and GIF89a; BMP bottom-up and top-down; Degas
 PI1, PC1, PC2, PI4 and PI5; GEM IMG with 1 and 4 planes, with and without an
-XIMG palette, using all IMG item types; POV raw; IndyPaint; Q16; odd sizes
+XIMG palette, using all IMG item types; POV raw; IndyPaint; Q16 with and
+without alpha; odd sizes
 and pictures larger than the screen) in Hatari on a VGA monitor and
 compares the screen pixel by pixel with the expected picture:
 
     python3 test/mkimages.py pics path/to/gen_q16
     EMUTOS=etos1024k.img python3 test/regress.py SHOWER.TTP pics results
 
-Version 1.2 passes all 31 pictures. Before the fixes, all Targa and BMP
+Version 1.2 passes all 32 pictures. Before the fixes, all Targa and BMP
 pictures, the interlaced GIF, the GIF89a picture, the PI5 picture, the IMG
 without a palette and the POV raw and IndyPaint pictures failed.
 

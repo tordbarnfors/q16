@@ -21,7 +21,8 @@ origin) and GBIG.GIF (interlaced).
 GIF: G87.GIF (GIF87a), GINT.GIF (interlaced), G89.GIF (GIF89a with a
 graphic control and a comment extension before the image).
 
-Q16: Q16.Q16, written with gen_q16 (built from the repository) if given.
+Q16: Q16.Q16 and Q16A.Q16 (with alpha, blended against black), written
+with gen_q16 (built from the repository) if given.
 
 Degas: D1.PI1 (low resolution), D1C.PC1 (compressed), D2C.PC2 (compressed
 medium resolution, shown with doubled lines), D4.PI4 (320 x 240, 256
@@ -376,3 +377,24 @@ if len(sys.argv) > 2:
     os.replace(os.path.join(d, "Q16_SRC.q16"), os.path.join(d, "Q16.Q16"))
     os.remove(os.path.join(d, "Q16_SRC.PNG"))
     reduce(im, 5, 6, 5).save(os.path.join(d, "Q16.PNG"))
+    # With alpha: a gradient from transparent (left) to opaque (right) and a
+    # transparent hole. Shower blends against black: c * (alpha + 1) >> 8
+    # for each RGB565 component (alpha 0 is black, 255 unchanged).
+    alpha = Image.new("L", (W, H))
+    alpha.putdata([min(255, x * 256 // W) if not (150 < x < 200 and 60 < y < 120) else 0
+                   for y in range(H) for x in range(W)])
+    rgba = im.copy()
+    rgba.putalpha(alpha)
+    rgba.save(os.path.join(d, "Q16A_SRC.PNG"))
+    subprocess.run([sys.argv[2], os.path.join(d, "Q16A_SRC.PNG")], check=True, stdout=subprocess.DEVNULL)
+    os.replace(os.path.join(d, "Q16A_SRC.q16"), os.path.join(d, "Q16A.Q16"))
+    os.remove(os.path.join(d, "Q16A_SRC.PNG"))
+    exp = []
+    for (r, g, b), a in zip(zip(*[iter(im.tobytes())] * 3), alpha.tobytes()):
+        c = [r >> 3, g >> 2, b >> 3]
+        if a != 255:
+            c = [0, 0, 0] if a == 0 else [v * (a + 1) >> 8 for v in c]
+        exp.append(((c[0] << 3) | (c[0] >> 2), (c[1] << 2) | (c[1] >> 4), (c[2] << 3) | (c[2] >> 2)))
+    e = Image.new("RGB", (W, H))
+    e.putdata(exp)
+    e.save(os.path.join(d, "Q16A.PNG"))

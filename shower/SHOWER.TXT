@@ -322,6 +322,8 @@ Version 1.2 (2026):
 	+ Q16-support added. Q16 is a fast, lossless format for 16-bit
 	   RGB565 pictures with optional 8-bit alpha. Version 1.2 was built
 	   from a disassembly of version 1.1 since the source code was lost.
+	   Q16 pictures are decoded without a 64 KB lookup table, which
+	   saves memory and a tenth of a second per picture.
 
 	+ Targa-bugs fixed: pictures with a width that isn't a multiple
 	   of 16 were skewed, pictures stored bottom-up (most of them) were

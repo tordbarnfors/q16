@@ -208,7 +208,7 @@ q16_load:
 	move.l	title,IMG_TITLE(a0)
 	clr.l	title
 
-												; Convert RGB565 (+ alpha) to RGB triples.
+	; Convert RGB565 (+ alpha) to RGB triples.
 
 	move.l	IMG_DATA(a0),a1
 	move.l	pixels,a0

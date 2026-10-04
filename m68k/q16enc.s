@@ -166,7 +166,7 @@ _q_encPix:
 	cmp.w	d7,d1
 	bne.s	.notrepeat
 
-												; 001xxxxx - Repeat previous pixel (1-32).
+	; 001xxxxx - Repeat previous pixel (1-32).
 
 	moveq	#0,d2								; d2 = count - 1
 .repeat:
@@ -183,7 +183,7 @@ _q_encPix:
 	move.b	d2,(a1)+
 	bra.s	.loop
 
-												; 01xxxxxx - Pixel from palette.
+	; 01xxxxxx - Pixel from palette.
 
 .notrepeat:
 	move.b	(a2,d1.l),d0
@@ -195,7 +195,7 @@ _q_encPix:
 	move.w	d1,d7
 	bra.s	.loop
 
-												; 1rrgggbb - Delta from previous pixel.
+	; 1rrgggbb - Delta from previous pixel.
 
 .notindex:
 	delta	d1,d7,d2,d3,d4,.literal
@@ -204,8 +204,8 @@ _q_encPix:
 	move.w	d1,d7
 	bra		.loop
 
-												; 000xxxxx - New pixels (1-32), little endian. Continues for as long
-												; as the next pixel can't be stored in a better way.
+	; 000xxxxx - New pixels (1-32), little endian. Continues for as long
+	; as the next pixel can't be stored in a better way.
 
 .literal:
 	move.l	a1,a5								; Count byte, filled in when done.
@@ -303,7 +303,7 @@ _q_encAlp:
 	cmp.b	(a3),d7
 	bne.s	.verbatim
 
-												; At least two more of the last value, store as repeats.
+	; At least two more of the last value, store as repeats.
 
 	move.b	d6,d0
 	subq.b	#1,d0

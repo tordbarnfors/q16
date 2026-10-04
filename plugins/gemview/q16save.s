@@ -130,7 +130,7 @@ q16_save:
 	move.l	a0,out
 	beq		.nomem
 
-												; Convert to RGB565. Lines are padded to 16 pixels in all types.
+	; Convert to RGB565. Lines are padded to 16 pixels in all types.
 
 	move.l	IMG_DATA(a4),a2						; a2 = line
 	move.l	pixels,a1							; a1 = RGB565 pixels
@@ -146,8 +146,8 @@ q16_save:
 	cmp.w	#IRGB,IMG_TYPE(a4)
 	beq.s	.chunky
 
-												; Bitplanes, one plane after the other: bit p of a pixel's colour is
-												; in plane p.
+	; Bitplanes, one plane after the other: bit p of a pixel's colour is
+	; in plane p.
 
 	lsr.l	#3,d4								; d4 = bytes per line and plane
 	move.l	d4,d0
@@ -232,7 +232,7 @@ q16_save:
 	move.l	d7,d5
 	mulu.l	d6,d5								; d5 = number of pixels
 
-												; Compress.
+	; Compress.
 
 	move.l	table,-(sp)
 	bsr		q16_setupStaticTable
@@ -263,7 +263,7 @@ q16_save:
 	bsr		q16_writeHeader
 	lea		24(sp),sp
 
-												; Write the file.
+	; Write the file.
 
 	move.l	SS_FILENAME(a5),a0
 	move.l	SS_OPEN(a5),a2

@@ -222,9 +222,9 @@ _q_decPix:
 	moveq	#0,d2
 	moveq	#0,d7
 
-												; Calculate how many opcodes we can decode before we need to check
-												; for end of input or output. An opcode reads at most 65 bytes and
-												; writes at most 32 pixels (64 bytes).
+	; Calculate how many opcodes we can decode before we need to check
+	; for end of input or output. An opcode reads at most 65 bytes and
+	; writes at most 32 pixels (64 bytes).
 
 .refill:
 	move.l	a6,d3
@@ -246,7 +246,7 @@ _q_decPix:
 	subq.l	#1,d3
 	move.w	d3,d6
 
-												; Fast loop. No checks for end of input or output.
+	; Fast loop. No checks for end of input or output.
 
 .loop:
 	move.b	(a0)+,d0
@@ -256,7 +256,7 @@ _q_decPix:
 	btst	#5,d0
 	bne.s	.repeat
 
-												; 000xxxxx - New pixels (1-32), little endian.
+	; 000xxxxx - New pixels (1-32), little endian.
 
 	move.w	d0,d3
 .literal:
@@ -270,7 +270,7 @@ _q_decPix:
 	dbra	d6,.loop
 	bra.s	.refill
 
-												; 1rrgggbb - Delta from previous pixel.
+	; 1rrgggbb - Delta from previous pixel.
 
 .delta:
 	add.w	(a4,d0.w*2),d7
@@ -280,7 +280,7 @@ _q_decPix:
 	dbra	d6,.loop
 	bra.s	.refill
 
-												; 01xxxxxx - Pixel from palette.
+	; 01xxxxxx - Pixel from palette.
 
 .index:
 	move.w	(a5,d0.w*2),d7
@@ -288,7 +288,7 @@ _q_decPix:
 	dbra	d6,.loop
 	bra.s	.refill
 
-												; 001xxxxx - Repeat previous pixel (1-32).
+	; 001xxxxx - Repeat previous pixel (1-32).
 
 .repeat:
 	moveq	#$1f,d3
@@ -304,8 +304,8 @@ _q_decPix:
 	dbra	d6,.loop
 	bra		.refill
 
-												; Slow loop for the last opcodes. Checks every opcode against end of
-												; input and output.
+	; Slow loop for the last opcodes. Checks every opcode against end of
+	; input and output.
 
 .slow:
 	cmpa.l	a6,a0
@@ -378,8 +378,8 @@ _q_decPix:
 	movem.l	(sp)+,d2-d7/a2-a6
 	rts
 
-												; Value to add to previous pixel for each delta opcode ($80-$FF).
-												; Opcode $d2 (zero delta) is reserved and never written by the encoder.
+	; Value to add to previous pixel for each delta opcode ($80-$FF).
+	; Opcode $d2 (zero delta) is reserved and never written by the encoder.
 
 .deltatable:
 	dc.w	$ef7e,$ef7f,$ef80,$ef81,$ef9e,$ef9f,$efa0,$efa1
@@ -449,7 +449,7 @@ _q_decAlp:
 	move.b	(a0)+,d3
 	bmi.s	.repeat
 
-												; 0-127 - Copy following 1-128 values verbatim. d3 = count - 1.
+	; 0-127 - Copy following 1-128 values verbatim. d3 = count - 1.
 
 	move.l	a2,d1
 	sub.l	a0,d1
@@ -465,7 +465,7 @@ _q_decAlp:
 	move.b	-1(a1),d7
 	bra.s	.loop
 
-												; -1 - -128 - Repeat previous value 1-128 times.
+	; -1 - -128 - Repeat previous value 1-128 times.
 
 .repeat:
 	neg.b	d3									; d3 = count, 1-128

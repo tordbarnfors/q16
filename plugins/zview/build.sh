@@ -6,7 +6,9 @@
 # and two headers from zView (imginfo.h and txt_data.h, GPL). They are
 # downloaded from GitHub unless a zView source tree is given.
 #
-# Usage: build.sh [zview source directory]
+# Also needs vasm (http://sun.hasenbraten.de/vasm/, CPU=m68k SYNTAX=mot).
+#
+# Usage: build.sh [zview source directory] [vasm executable]
 
 set -e
 cd "$(dirname "$0")"
@@ -21,9 +23,14 @@ else
 	done
 fi
 
+VASM=${2:-vasmm68k_mot}
+
 CFLAGS="-m68000 -O2 -std=gnu99 -Wall -I$ZVINC -I../.."
 
-m68k-atari-mint-gcc $CFLAGS -o Q16.LDG q16codec.c ../../q16_lib.c -lldg -Wl,--stack,16k
-m68k-atari-mint-strip Q16.LDG
+# The codec is linked without a C library: ldgstart.s and ldgmini.c
+# provide the startup code, ldg_init() and the few functions needed.
+$VASM -quiet -devpac -Faout -o ldgstart.o ldgstart.s > /dev/null
+m68k-atari-mint-gcc $CFLAGS -fomit-frame-pointer -nostdlib -s -o Q16.LDG ldgstart.o q16codec.c ldgmini.c ../../q16_lib.c -lgcc
+rm -f ldgstart.o
 m68k-atari-mint-gcc $CFLAGS -o test/ZVTEST.PRG test/zvtest.c -lldg -lgem
 echo "Built Q16.LDG ($(wc -c < Q16.LDG) bytes) and test/ZVTEST.PRG"

@@ -9,6 +9,10 @@ display Q16 pictures and save pictures as Q16.
 * Encoding converts zView's 24-bit RGB to RGB565 (no alpha) and writes the
   Q16 file when the last line has been received.
 * Uses q16_lib.c and is built for the 68000, so it runs on all Ataris.
+* About 6 KB: it's linked without a C library. `ldgstart.s` is the startup
+  code (shrinks the memory block, calls `main()`), and `ldgmini.c` has the
+  library side of the LDG protocol (`ldg_init()`) and the few string
+  functions the codec needs. All other system calls are GEMDOS traps.
 
 ## Installing
 
@@ -16,11 +20,13 @@ Copy `Q16.LDG` into the `codecs` folder in zView's folder.
 
 ## Building
 
-    ./build.sh [zview source directory]
+    ./build.sh [zview source directory] [vasm executable]
 
-needs m68k-atari-mint-gcc with the LDG library (`cross-mint-essential` and
-`ldg-m68k-atari-mint` from
-[Vincent Rivière's PPA](https://launchpad.net/~vriviere/+archive/ubuntu/ppa)).
+needs m68k-atari-mint-gcc (`cross-mint-essential` from
+[Vincent Rivière's PPA](https://launchpad.net/~vriviere/+archive/ubuntu/ppa))
+and [vasm](http://sun.hasenbraten.de/vasm/). The codec only uses `ldg.h` from
+the LDG package (`ldg-m68k-atari-mint`); the test program links with the LDG
+library.
 zView's `imginfo.h` and `txt_data.h` are downloaded from GitHub unless a zView
 source tree is given.
 
@@ -32,5 +38,6 @@ those lines into a new Q16 file. It reads the file names from `ZVTEST.CFG`.
 
 Tested in Hatari (Falcon, EmuTOS): the decoded lines match a reference
 decoder for pictures with and without alpha, and a picture without alpha
-re-encodes to a byte-identical file. zView itself hasn't been tested, as no
+re-encodes to a byte-identical file, both with the original 120 KB build
+(MiNTLib) and the current 6 KB one. zView itself hasn't been tested, as no
 zView binary was available.

@@ -11,16 +11,26 @@ computers with import and export modules. `Q16.SIM` is an import module and
   pictures of other depths to 16 bit before calling the module.
 * Use q16_lib.c and are built for the 68000.
 
-The modules are built with gcc and are for gcc builds of Smurf, such as the
-one built from the GitHub sources: Smurf checks that a module was built with
-the same compiler as itself (`MOD_INFO.compiler_id`), since Pure C and gcc
-use different calling conventions and int sizes. The original Smurf 1.06
-binaries are built with Pure C and won't load these modules.
+There are two builds, since Smurf checks that a module was built with the
+same compiler as itself (`MOD_INFO.compiler_id`): Pure C and gcc use
+different calling conventions.
+
+* `Q16.SIM`, `Q16.SXM`: for gcc builds of Smurf, such as the one built from
+  the GitHub sources.
+* `purec/Q16.SIM`, `purec/Q16.SXM`: for the original Smurf 1.06 binaries,
+  which are built with Pure C. Same C code, also compiled with gcc, but with
+  compiler id 0 and small assembler thunks: the entry point takes the
+  `GARGAMEL` pointer in A0 and returns the result in D0 (import) or A0
+  (export), and the calls to Smurf's `SMalloc()`/`SMfree()` pass their
+  arguments in D0/A0 and protect D2, which Pure C functions may destroy but
+  gcc expects to be preserved.
+  The Smurf structures have the same layout with both compilers, since they
+  use fixed size types.
 
 ## Installing
 
 Copy `Q16.SIM` into `modules\import` and `Q16.SXM` into `modules\export` in
-Smurf's folder.
+Smurf's folder. Take them from `purec` for the original Smurf 1.06.
 
 ## Building
 
@@ -41,6 +51,12 @@ the export module with the imported pixels and Smurf's message sequence
 (`MEXTEND`, `MCOLSYS`, `MSTART`, `MEXEC`, `MTERM`). It reads the file names
 from `SMURFTST.CFG`.
 
-Tested in Hatari (Falcon, EmuTOS): imported pixels match a reference decoder
-for pictures with and without alpha, and a picture without alpha exports to a
-byte-identical file.
+`test/SMURFTPC.TOS` is the same program calling the modules like a Pure C
+Smurf (`test/pccall.s`): `GARGAMEL` pointer in A0, Pure C service functions
+that take their arguments in registers and destroy D1/D2/A1.
+
+Tested in Hatari (Falcon, EmuTOS), with both builds: imported pixels match a
+reference decoder for pictures with and without alpha, a picture without
+alpha exports to a byte-identical file, and the Pure C build gives the same
+output as the gcc build. The Pure C build hasn't been tried in a real Pure C
+Smurf 1.06, since no copy of that binary could be found.

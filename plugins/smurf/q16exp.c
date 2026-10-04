@@ -10,6 +10,7 @@
 #include <string.h>
 #include "import.h"
 #include "smurfine.h"
+#include "smurfabi.h"
 #include "q16_lib.h"
 
 MOD_INFO module_info =

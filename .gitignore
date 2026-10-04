@@ -69,4 +69,6 @@ plugins/gemview/Q16.GVL
 plugins/smurf/Q16.SIM
 plugins/smurf/Q16.SXM
 plugins/smurf/test/SMURFTST.TOS
+plugins/smurf/test/SMURFTPC.TOS
+plugins/smurf/purec/
 plugins/smurf/smurf-include/

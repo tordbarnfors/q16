@@ -4,7 +4,7 @@
 |---|---|---|---|---|---|---|
 | [zView](zview/) | Viewer | `Q16.LDG` (LDG codec) | yes | yes | 68000+ | Codec test program in Hatari |
 | [GEM-View 3](gemview/) | Viewer | `Q16.GVL` (load module) | yes | - | 68020+ | GEM-View 3.18 in Hatari |
-| [Smurf](smurf/) | Editor | `Q16.SIM`, `Q16.SXM` | yes | yes | 68000+ | Module test program in Hatari |
+| [Smurf](smurf/) | Editor | `Q16.SIM`, `Q16.SXM` (gcc and Pure C builds) | yes | yes | 68000+ | Module test programs in Hatari |
 
 Shower, the viewer in [../shower](../shower/), has Q16 support built in.
 
@@ -24,9 +24,8 @@ zView asks for, which is white by default.
 
 ## Possible improvements
 
-* A Pure C build of the Smurf modules, for the original Smurf 1.06 binaries.
-  That needs 16-bit int (gcc `-mshort`) and thunks for Pure C's register
-  calling convention, and a Pure C Smurf to test with.
+* Testing the Pure C build of the Smurf modules in the original Smurf 1.06,
+  if a copy turns up.
 * A GEM-View save module (`.GVS`).
 * Smaller zView codec: it's linked with MiNTLib's startup code, which makes
   it about 120 KB.

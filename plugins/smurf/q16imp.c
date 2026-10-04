@@ -11,6 +11,7 @@
 #include <string.h>
 #include "import.h"
 #include "smurfine.h"
+#include "smurfabi.h"
 #include "q16_lib.h"
 
 MOD_INFO module_info =
@@ -72,15 +73,15 @@ short imp_module_main( GARGAMEL * smurf_struct )
 		return M_INVALID;
 
 	nbPixels = (unsigned long) width * height;
-	pixels = smurf_struct->services->SMalloc( nbPixels * 2 );
-	table = smurf_struct->services->SMalloc( 65536 );
+	pixels = SMALLOC( smurf_struct, nbPixels * 2 );
+	table = SMALLOC( smurf_struct, 65536 );
 	if( alphaBytes )
-		alpha = smurf_struct->services->SMalloc( nbPixels );
+		alpha = SMALLOC( smurf_struct, nbPixels );
 	if( !pixels || !table || (alphaBytes && !alpha) )
 	{
-		if( pixels ) smurf_struct->services->SMfree( pixels );
-		if( table ) smurf_struct->services->SMfree( table );
-		if( alpha ) smurf_struct->services->SMfree( alpha );
+		if( pixels ) SMFREE( smurf_struct, pixels );
+		if( table ) SMFREE( smurf_struct, table );
+		if( alpha ) SMFREE( smurf_struct, alpha );
 		return M_MEMORY;
 	}
 
@@ -99,11 +100,11 @@ short imp_module_main( GARGAMEL * smurf_struct )
 		if( res.readEnd != p + alphaBytes || res.writeEnd != alpha + nbPixels )
 			goto corrupt;
 		blend_white( pixels, alpha, nbPixels );
-		smurf_struct->services->SMfree( alpha );
+		SMFREE( smurf_struct, alpha );
 	}
-	smurf_struct->services->SMfree( table );
+	SMFREE( smurf_struct, table );
 
-	smurf_struct->services->SMfree( file );
+	SMFREE( smurf_struct, file );
 	pic->pic_data = pixels;
 	pic->pic_width = width;
 	pic->pic_height = height;
@@ -114,8 +115,8 @@ short imp_module_main( GARGAMEL * smurf_struct )
 	return M_PICDONE;
 
 corrupt:
-	smurf_struct->services->SMfree( pixels );
-	smurf_struct->services->SMfree( table );
-	if( alpha ) smurf_struct->services->SMfree( alpha );
+	SMFREE( smurf_struct, pixels );
+	SMFREE( smurf_struct, table );
+	if( alpha ) SMFREE( smurf_struct, alpha );
 	return M_PICERR;
 }

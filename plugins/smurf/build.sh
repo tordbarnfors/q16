@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds the Smurf modules Q16.SIM (import) and Q16.SXM (export), and
-# test/SMURFTST.TOS.
+# test/SMURFTST.TOS, and the same for Pure C Smurf (purec/, test/SMURFTPC.TOS).
 #
 # Needs m68k-atari-mint-gcc (https://launchpad.net/~vriviere/+archive/ubuntu/ppa),
 # vasm (http://sun.hasenbraten.de/vasm/, CPU=m68k SYNTAX=mot) and six
@@ -25,10 +25,22 @@ VASM=${2:-vasmm68k_mot}
 
 CFLAGS="-m68000 -O2 -fomit-frame-pointer -std=gnu99 -Wall -I$SMINC -I../.."
 
+# For Smurf built with gcc.
 $VASM -quiet -devpac -Faout -o impstart.o impstart.s > /dev/null
 $VASM -quiet -devpac -Faout -o expstart.o expstart.s > /dev/null
 m68k-atari-mint-gcc $CFLAGS -s -nostartfiles -o Q16.SIM impstart.o q16imp.c ../../q16_lib.c -lgem
 m68k-atari-mint-gcc $CFLAGS -s -nostartfiles -o Q16.SXM expstart.o q16exp.c ../../q16_lib.c -lgem
+
+# For Smurf built with Pure C (the original Smurf 1.06 binaries).
+mkdir -p purec
+$VASM -quiet -devpac -Faout -DPUREC_SMURF=1 -o impstart.o impstart.s > /dev/null
+$VASM -quiet -devpac -Faout -DPUREC_SMURF=1 -o expstart.o expstart.s > /dev/null
+m68k-atari-mint-gcc $CFLAGS -DPUREC_SMURF -s -nostartfiles -o purec/Q16.SIM impstart.o q16imp.c ../../q16_lib.c -lgem
+m68k-atari-mint-gcc $CFLAGS -DPUREC_SMURF -s -nostartfiles -o purec/Q16.SXM expstart.o q16exp.c ../../q16_lib.c -lgem
+
+# Test program, also in a version calling the modules like Pure C Smurf.
+$VASM -quiet -devpac -Faout -o test/pccall.o test/pccall.s > /dev/null
 m68k-atari-mint-gcc $CFLAGS -o test/SMURFTST.TOS test/smurftst.c
-rm -f impstart.o expstart.o
-echo "Built Q16.SIM ($(wc -c < Q16.SIM) bytes), Q16.SXM ($(wc -c < Q16.SXM) bytes) and test/SMURFTST.TOS"
+m68k-atari-mint-gcc $CFLAGS -DPUREC_CALLER -o test/SMURFTPC.TOS test/smurftst.c test/pccall.o
+rm -f impstart.o expstart.o test/pccall.o
+echo "Built Q16.SIM, Q16.SXM, purec/Q16.SIM, purec/Q16.SXM, test/SMURFTST.TOS and test/SMURFTPC.TOS"

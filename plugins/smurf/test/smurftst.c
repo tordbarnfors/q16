@@ -6,6 +6,9 @@
  * Reads SMURFTST.CFG with five lines: import module, picture, file to write
  * the imported 16 bit pixels to, export module, file to export them to.
  * Writes a log to SMURFTST.TXT.
+ *
+ * Built with PUREC_CALLER defined, it calls the modules like Smurf built
+ * with Pure C (arguments in registers, see pccall.s).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,13 +32,30 @@ typedef struct
 
 static FILE * logf;
 
-static void * test_SMalloc( long amount )
+void * test_SMalloc( long amount );
+void test_SMfree( void * ptr );
+
+#ifdef PUREC_CALLER
+short pc_call_import( const void * entry, GARGAMEL * g );
+EXPORT_PIC * pc_call_export( const void * entry, GARGAMEL * g );
+void * pc_SMalloc( long amount );
+void pc_SMfree( void * ptr );
+#define CALL_IMPORT( m, g )		pc_call_import( (m)->entry, (g) )
+#define CALL_EXPORT( m, g )		pc_call_export( (m)->entry, (g) )
+#define EXPECTED_COMPILER		0
+#else
+#define CALL_IMPORT( m, g )		((short (*)(GARGAMEL *)) (m)->entry)( (g) )
+#define CALL_EXPORT( m, g )		((EXPORT_PIC * (*)(GARGAMEL *)) (m)->entry)( (g) )
+#define EXPECTED_COMPILER		1
+#endif
+
+void * test_SMalloc( long amount )
 {
 	long p = Malloc( amount );
 	return p > 0 ? (void *) p : NULL;
 }
 
-static void test_SMfree( void * ptr )
+void test_SMfree( void * ptr )
 {
 	Mfree( ptr );
 }
@@ -91,8 +111,13 @@ int main( void )
 	chomp( impname ); chomp( picname ); chomp( rawname ); chomp( expname ); chomp( outname );
 
 	memset( &services, 0, sizeof(services) );
+#ifdef PUREC_CALLER
+	services.SMalloc = pc_SMalloc;
+	services.SMfree = pc_SMfree;
+#else
 	services.SMalloc = test_SMalloc;
 	services.SMfree = test_SMfree;
+#endif
 
 	/* Import */
 
@@ -120,7 +145,9 @@ int main( void )
 	g.smurf_pic = &pic;
 	g.services = &services;
 	g.module_mode = MEXEC;
-	ret = ((short (*)(GARGAMEL *)) imp->entry)( &g );
+	if( imp->info->compiler_id != EXPECTED_COMPILER )
+		fprintf( logf, "WARNING: compiler id %d, expected %d\n", imp->info->compiler_id, EXPECTED_COMPILER );
+	ret = CALL_IMPORT( imp, &g );
 	fprintf( logf, "import returned %d: %dx%d depth %d col_format %d format '%s'\n", ret, pic.pic_width,
 			 pic.pic_height, pic.depth, pic.col_format, pic.format_name );
 	if( ret != M_PICDONE )
@@ -141,20 +168,19 @@ int main( void )
 	fprintf( logf, "export module: %s %x, depths %d, compiler %d\n", exp->info->mod_name, exp->info->version,
 			 exp->ability->depth1, exp->info->compiler_id );
 	{
-		EXPORT_PIC * (*exp_main)(GARGAMEL *) = (EXPORT_PIC * (*)(GARGAMEL *)) exp->entry;
 		EXPORT_PIC * result;
 
 		g.module_mode = MEXTEND;
-		exp_main( &g );
+		CALL_EXPORT( exp, &g );
 		fprintf( logf, "MEXTEND -> mode %d, extension %d\n", g.module_mode, g.event_par[0] );
 		g.module_mode = MCOLSYS;
-		exp_main( &g );
+		CALL_EXPORT( exp, &g );
 		fprintf( logf, "MCOLSYS -> mode %d, color system %d\n", g.module_mode, g.event_par[0] );
 		g.module_mode = MSTART;
-		exp_main( &g );
+		CALL_EXPORT( exp, &g );
 		fprintf( logf, "MSTART -> mode %d\n", g.module_mode );
 		g.module_mode = MEXEC;
-		result = exp_main( &g );			/* Frees pic.pic_data, as Smurf expects. */
+		result = CALL_EXPORT( exp, &g );			/* Frees pic.pic_data, as Smurf expects. */
 		fprintf( logf, "MEXEC -> mode %d, result %p, length %ld\n", g.module_mode, (void *) result,
 				 result ? (long) result->f_len : 0L );
 		if( result )
@@ -164,7 +190,7 @@ int main( void )
 			fclose( f );
 		}
 		g.module_mode = MTERM;
-		exp_main( &g );
+		CALL_EXPORT( exp, &g );
 	}
 
 done:

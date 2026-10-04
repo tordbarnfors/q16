@@ -75,5 +75,6 @@ code for 16-bit int is assembled after the code for 32-bit int and wins.
 `test/fixsmurf.py` patches the binaries (smurf.prg and the modules) by
 replacing the wrong variant with NOPs; the real fix is to preprocess those
 files (rename them to `.S` or assemble with `-x assembler-with-cpp`).
-Without one, Smurf spends a very long time on first start building
-its nearest colour table (`smp.8` for 256 colours).
+On first start Smurf also spends a very long time in emulation building its
+nearest colour table (`smp.8` for 256 colours); providing a precomputed one
+skips that.

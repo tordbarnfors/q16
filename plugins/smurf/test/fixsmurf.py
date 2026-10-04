@@ -18,7 +18,7 @@ Usage: fixsmurf.py <smurf source directory> <binaries...>
 
 The binaries are modified in place.
 """
-import re, subprocess, sys, os
+import re, subprocess, sys, os, tempfile
 src, bins = sys.argv[1], sys.argv[2:]
 MARK = bytes.fromhex('4afc1a2b3c4d')
 blocks = []
@@ -37,11 +37,13 @@ for f in subprocess.check_output(['grep','-rl','__MSHORT__','--include=*.s',src]
             if wrong: blocks.append((os.path.relpath(f, src), i + 1, good, wrong))
             i = j
         i += 1
+tmp = tempfile.mkdtemp()
 def asm(lines):
-    open('b.s','w').write('\t.text\n' + '\n'.join(lines) + '\n')
-    subprocess.run(['m68k-atari-mint-as','-m68030','--register-prefix-optional','-o','b.o','b.s'], check=True)
-    subprocess.run(['m68k-atari-mint-objcopy','-O','binary','-j','.text','b.o','b.bin'], check=True)
-    return open('b.bin','rb').read()
+    s, o, b = (os.path.join(tmp, 'b' + e) for e in ('.s', '.o', '.bin'))
+    open(s, 'w').write('\t.text\n' + '\n'.join(lines) + '\n')
+    subprocess.run(['m68k-atari-mint-as','-m68030','--register-prefix-optional','-o',o,s], check=True)
+    subprocess.run(['m68k-atari-mint-objcopy','-O','binary','-j','.text',o,b], check=True)
+    return open(b,'rb').read()
 mk = ['\t.word 0x4afc,0x1a2b,0x3c4d']
 pats = {}
 for f, ln, good, wrong in blocks:
@@ -60,4 +62,4 @@ for p in bins:
         open(p,'wb').write(d); print(os.path.basename(p), n); total += n
 print('blocks', len(blocks), 'patterns', len(pats), 'patched', total)
 for k, where in pats.items():
-    if k not in found: print('unmatched', where[:3])
+    if k not in found: print('not found in these binaries:', where[:3])

@@ -60,3 +60,20 @@ reference decoder for pictures with and without alpha, a picture without
 alpha exports to a byte-identical file, and the Pure C build gives the same
 output as the gcc build. The Pure C build hasn't been tried in a real Pure C
 Smurf 1.06, since no copy of that binary could be found.
+
+The gcc build was also tried in the real Smurf, built from the GitHub
+sources (`dist/smurf.prg`), in Hatari (Falcon, EmuTOS, 640x480 in 256
+colours): Smurf lists Q16 among its import formats and loads and displays
+Q16 pictures given on its command line.
+
+![Smurf with two Q16 pictures](test/smurf.png)
+
+That Smurf build crashes as soon as it displays any picture, whatever the
+format, because of a bug in Smurf itself: several of its `.s` files use
+`#ifndef __MSHORT__` but are assembled without the C preprocessor, so the
+code for 16-bit int is assembled after the code for 32-bit int and wins.
+`test/fixsmurf.py` patches the binaries (smurf.prg and the modules) by
+replacing the wrong variant with NOPs; the real fix is to preprocess those
+files (rename them to `.S` or assemble with `-x assembler-with-cpp`).
+Without one, Smurf spends a very long time on first start building
+its nearest colour table (`smp.8` for 256 colours).

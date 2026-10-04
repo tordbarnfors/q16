@@ -4,7 +4,7 @@
 |---|---|---|---|---|---|---|
 | [zView](zview/) | Viewer | `Q16.LDG` (LDG codec) | yes | yes | 68000+ | Codec test program in Hatari |
 | [GEM-View 3](gemview/) | Viewer | `Q16.GVL` (load module) | yes | - | 68020+ | GEM-View 3.18 in Hatari |
-| [Smurf](smurf/) | Editor | `Q16.SIM`, `Q16.SXM` (gcc and Pure C builds) | yes | yes | 68000+ | Module test programs in Hatari |
+| [Smurf](smurf/) | Editor | `Q16.SIM`, `Q16.SXM` (gcc and Pure C builds) | yes | yes | 68000+ | Module test programs and Smurf (GitHub build) in Hatari |
 
 Shower, the viewer in [../shower](../shower/), has Q16 support built in.
 

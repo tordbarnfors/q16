@@ -420,13 +420,13 @@ uint8_t* q16_compressAlpha( uint8_t* pDest, const uint8_t* pBegin, const uint8_t
 		{
 			*pSpanHead = (uint8_t)(span - 1);
 
-			int repeats = 2;
+			long repeats = 2;					// long, since a run can be longer than a 16-bit int.
 			while( repeats < pEnd - pRead && pRead[repeats] == last )
 				repeats++;
 
 			while( repeats >= 2 )
 			{
-				int nToWrite = repeats < 128 ? repeats : 128;
+				int nToWrite = repeats < 128 ? (int) repeats : 128;
 				*pWrite++ = (uint8_t)(-nToWrite);
 				repeats -= nToWrite;
 				pRead += nToWrite;

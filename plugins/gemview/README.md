@@ -1,7 +1,6 @@
 # Q16 load module for GEM-View
 
-[GEM-View](https://www.atarimania.com/utility-atari-st-gem-view_33493.html) 3
-by Dieter Fiebelkorn is an image viewer for Atari computers with loadable
+GEM-View 3 by Dieter Fiebelkorn is an image viewer for Atari computers with loadable
 modules. `Q16.GVL` is a load module that lets it open Q16 pictures.
 
 * Written in Devpac assembly and uses `../../m68k/q16dec.s`, so it needs a

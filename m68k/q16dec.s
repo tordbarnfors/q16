@@ -22,9 +22,11 @@
 ;
 ;	All functions are reentrant. No BSS or DATA is used.
 ;
+;	The file can be assembled on its own or INCLUDEd into a program.
+;
 ;=========================================================================
 
-	MC68030
+	OPT	P=68030
 
 	SECTION	TEXT
 
@@ -514,5 +516,3 @@ da_error:
 da_done:
 	movem.l	(sp)+,d3-d4/d6-d7/a2
 	rts
-
-	END

@@ -25,8 +25,8 @@ Devpac 3: assemble `q16dec.s` to a linkable object file.
 
 vasm (`vasmm68k_mot`):
 
-    vasmm68k_mot -devpac -m68030 -Faout -o q16dec.o q16dec.s   # GCC/MiNT (a.out)
-    vasmm68k_mot -devpac -m68030 -Felf -o q16dec.o q16dec.s    # GCC/MiNT (ELF)
+    vasmm68k_mot -devpac -Faout -o q16dec.o q16dec.s   # GCC/MiNT (a.out)
+    vasmm68k_mot -devpac -Felf -o q16dec.o q16dec.s    # GCC/MiNT (ELF)
 
 Every function is exported both with and without a leading underscore.
 

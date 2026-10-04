@@ -1416,86 +1416,213 @@ _L0FB4:
 	MOVEM.L	(A7)+,D0-D2/A0
 	RTS
 
+;	Targa header parser. A0 = format table entry.
+;
+;	v1.2: rewritten together with the loader. Checks the file size, the
+;	picture size and the bits per pixel, and accepts 32-bit pictures.
+
 _L0FC4:
 	MOVEA.L	_D2BEA(PC),A1
-	CMPI.B	#2,2(A1)
-	BEQ.W	_L0FE0
-	CMPI.B	#10,2(A1)
-	BEQ.W	_L0FE0
-	BRA.W	_L01E0
+	CMPI.L	#18,(_B32C4).L			; File size
+	BLO.W	_L01E0
+	MOVE.B	2(A1),D0			; Image type: 2 = uncompressed,
+	ANDI.B	#$F7,D0				; 10 = RLE, true color
+	CMP.B	#2,D0
+	BNE.W	_L01E0
+	MOVE.B	16(A1),D0			; Bits per pixel
+	CMP.B	#16,D0
+	BEQ.S	_L0FE0
+	CMP.B	#24,D0
+	BEQ.S	_L0FE0
+	CMP.B	#32,D0
+	BNE.W	_L01E0
 _L0FE0:
-	MOVE.W	$C(A1),D0
+	MOVE.W	$C(A1),D0			; Width, little endian
 	ROL.W	#8,D0
-	MOVE.W	D0,(_D2708).L
+	BEQ.W	_L01E0
+	CMP.W	#$7FF0,D0
+	BHI.W	_L01E0
+	MOVE.W	D0,(_D2708).L			; Real width
 	ADDI.W	#15,D0
 	ANDI.W	#$FFF0,D0
-	MOVE.W	D0,6(A0)
-	MOVE.W	$E(A1),D0
+	MOVE.W	D0,6(A0)			; Width rounded up to 16 pixels
+	MOVE.W	$E(A1),D0			; Height
 	ROL.W	#8,D0
+	BEQ.W	_L01E0
 	MOVE.W	D0,8(A0)
-	MOVE.W	#16,$A(A0)
+	MOVE.W	#16,$A(A0)			; True color
 	RTS
+
+;	Targa loader.
+;
+;	v1.2: rewritten. Version 1.1 read lines of the width rounded up to 16
+;	pixels, which skewed pictures with other widths, ignored the origin
+;	(most Targa pictures are stored bottom up and were shown upside down),
+;	converted uncompressed 16-bit pixels wrongly and skipped color maps by
+;	a wrong amount. RLE pictures are now unpacked into a buffer of their
+;	own, with packets clipped to the picture, and then converted like
+;	uncompressed ones. 32-bit pictures are shown without their alpha.
 
 _L100A:
-	BSR.W	_L0F6E
+	BSR.W	_L0F6E				; Calculate screen position.
+	MOVEM.L	D2-D7/A2-A6,-(A7)
+	CLR.L	(TGA_BUFFER).L
 	MOVEA.L	_D2BEA(PC),A1
-	LEA	$12(A1),A0
+	LEA	18(A1),A0
 	MOVEQ	#0,D0
-	MOVE.B	(A1),D0
-	ADDA.W	D0,A0
-	TST.B	1(A1)
+	MOVE.B	(A1),D0				; Skip the image ID.
+	ADDA.L	D0,A0
+	TST.B	1(A1)				; Skip the color map.
 	BEQ.S	_L1030
-	MOVEQ	#0,D0
-	MOVE.B	7(A1),D0
-	MULU.W	5(A1),D0
-	LSR.W	#3,D0
-	ADDA.W	D0,A0
-_L1030:
-	CMPI.B	#2,2(A1)
-	BEQ.S	_L1044
-	CMPI.B	#10,2(A1)
-	BEQ.S	_L10BC
-	BRA.W	_L01E0
-_L1044:
-	MOVEA.L	_B4F4E(PC),A3
-	MOVEA.L	_B32CC(PC),A2
+	MOVE.B	6(A1),D0			; Number of entries, little endian
+	LSL.W	#8,D0
+	MOVE.B	5(A1),D0
 	MOVEQ	#0,D1
-	MOVE.W	_B36E8(PC),D1
-	SUB.W	6(A2),D1
-	ADD.W	D1,D1
-	MOVE.B	$10(A1),D0
-	CMP.B	#16,D0
-	BEQ.S	_L106A
-	CMP.B	#24,D0
-	BEQ.S	_L1090
+	MOVE.B	7(A1),D1			; Bits per entry
+	ADDQ.W	#7,D1
+	LSR.W	#3,D1
+	MULU.W	D1,D0
+	ADDA.L	D0,A0
+_L1030:
+	MOVEQ	#0,D7
+	MOVE.W	_D2708(PC),D7			; D7 = width
+	MOVEA.L	_B32CC(PC),A2
+	MOVEQ	#0,D6
+	MOVE.W	8(A2),D6			; D6 = height
+	MOVEQ	#0,D5
+	MOVE.B	16(A1),D5
+	LSR.W	#3,D5				; D5 = bytes per pixel
+	CMPI.B	#10,2(A1)
+	BNE.S	_L1044
+
+	MOVE.L	D7,D4				; Unpack RLE into a buffer.
+	MULU.L	D6,D4
+	MULU.L	D5,D4				; D4 = bytes
+	MOVE.L	D4,-(A7)
+	MOVE.W	#72,-(A7)			; Malloc
+	TRAP	#1
+	ADDQ.L	#6,A7
+	TST.L	D0
+	BEQ.W	TGA_FAIL
+	MOVE.L	D0,(TGA_BUFFER).L
+	MOVEA.L	D0,A3
+	LEA	(A3,D4.L),A4			; A4 = end of buffer
+	MOVEA.L	A1,A5
+	ADDA.L	_B32C4(PC),A5			; A5 = end of file
+	SUBQ.W	#1,D5
+TGA_PACKET:
+	CMPA.L	A4,A3
+	BHS.S	TGA_UNPACKED
+	CMPA.L	A5,A0
+	BHS.S	TGA_UNPACKED
+	MOVEQ	#0,D0
+	MOVE.B	(A0)+,D0
+	BCLR	#7,D0
+	BNE.S	TGA_RUN
+TGA_RAW:					; D0 + 1 pixels follow.
+	MOVE.W	D5,D1
+TGA_RAWBYTE:
+	MOVE.B	(A0)+,(A3)+
+	DBRA	D1,TGA_RAWBYTE
+	CMPA.L	A4,A3
+	DBHS	D0,TGA_RAW
+	BRA.S	TGA_PACKET
+TGA_RUN:					; Next pixel D0 + 1 times
+	MOVEA.L	A0,A6
+	MOVE.W	D5,D1
+TGA_RUNBYTE:
+	MOVE.B	(A6)+,(A3)+
+	DBRA	D1,TGA_RUNBYTE
+	CMPA.L	A4,A3
+	DBHS	D0,TGA_RUN
+	MOVEA.L	A6,A0
+	BRA.S	TGA_PACKET
+TGA_UNPACKED:
+	ADDQ.W	#1,D5
+	MOVEA.L	(TGA_BUFFER).L,A0
+
+_L1044:						; Convert and copy to the screen.
+	MOVEA.L	_B4F4E(PC),A4			; A4 = screen line
+	MOVEQ	#0,D3
+	MOVE.W	_B36E8(PC),D3
+	ADD.L	D3,D3				; D3 = bytes per screen line
+	BTST	#5,17(A1)			; Top-left origin?
+	BNE.S	_L106A
+	MOVE.L	D6,D0				; No, start with the last line.
+	SUBQ.L	#1,D0
+	MULU.L	D3,D0
+	ADDA.L	D0,A4
+	NEG.L	D3
+_L106A:
+	MOVE.W	6(A2),D4
+	SUB.W	D7,D4				; D4 = padding up to 16 pixels
+	LEA	TGA_LINE16(PC),A5
+	CMP.W	#2,D5
+	BEQ.S	_L1070
+	LEA	TGA_LINE24(PC),A5
+	CMP.W	#3,D5
+	BEQ.S	_L1070
+	LEA	TGA_LINE32(PC),A5
+_L1070:
+	SUBQ.W	#1,D6
+_L1076:
+	MOVEA.L	A4,A3
+	MOVE.W	D7,D2
+	SUBQ.W	#1,D2
+	JSR	(A5)
+	MOVE.W	D4,D2
+	BRA.S	_L1096
+_L1090:
+	CLR.W	(A3)+
+_L1096:
+	DBRA	D2,_L1090
+	ADDA.L	D3,A4
+	DBRA	D6,_L1076
+
+	BSR.S	TGA_FREE
+	MOVEM.L	(A7)+,D2-D7/A2-A6
 	RTS
 
-_L106A:
-	MOVE.W	8(A2),D3
-	SUBQ.W	#1,D3
-_L1070:
-	MOVE.W	6(A2),D2
-	SUBQ.W	#1,D2
-_L1076:
+TGA_FAIL:
+	BSR.S	TGA_FREE
+	BRA.W	_L01E0
+
+TGA_FREE:
+	MOVE.L	(TGA_BUFFER).L,D0
+	BEQ.S	TGA_FREED
+	CLR.L	(TGA_BUFFER).L
+	MOVE.L	D0,-(A7)
+	MOVE.W	#73,-(A7)			; Mfree
+	TRAP	#1
+	ADDQ.L	#6,A7
+TGA_FREED:
+	RTS
+
+;	Convert D2 + 1 pixels from A0 to RGB565 at A3.
+
+TGA_LINE16:					; 16 bits: ARRRRRGG GGGBBBBB, little endian
 	MOVEQ	#0,D0
 	MOVE.W	(A0)+,D0
 	ROL.W	#8,D0
 	ROR.L	#5,D0
-	ADD.W	D1,D0
+	ADD.W	D0,D0
 	ROL.L	#5,D0
 	MOVE.W	D0,(A3)+
-	DBRA	D2,_L1076
-	ADDA.W	D1,A3
-	DBRA	D3,_L1070
+	DBRA	D2,TGA_LINE16
 	RTS
 
-_L1090:
-	MOVE.W	8(A2),D3
-	SUBQ.W	#1,D3
-_L1096:
-	MOVE.W	6(A2),D2
-	SUBQ.W	#1,D2
-_L109C:
+TGA_LINE32:					; 32 bits: blue, green, red, alpha
+	BSR.S	TGA_PIXEL24
+	ADDQ.L	#1,A0
+	DBRA	D2,TGA_LINE32
+	RTS
+
+TGA_LINE24:					; 24 bits: blue, green, red
+	BSR.S	TGA_PIXEL24
+	DBRA	D2,TGA_LINE24
+	RTS
+
+TGA_PIXEL24:
 	MOVE.B	(A0)+,D0
 	ROR.L	#8,D0
 	MOVE.B	(A0)+,D0
@@ -1506,110 +1633,6 @@ _L109C:
 	ROR.L	#5,D0
 	SWAP	D0
 	MOVE.W	D0,(A3)+
-	DBRA	D2,_L109C
-	ADDA.W	D1,A3
-	DBRA	D3,_L1096
-	RTS
-
-_L10BC:
-	MOVE.L	_B36E4(PC),D0
-	ADD.L	_B36E0(PC),D0
-	MOVE.L	D0,D2
-	MOVEQ	#0,D1
-	MOVE.W	_D2708(PC),D1
-	MOVEA.L	_B32CC(PC),A2
-	MULU.W	8(A2),D1
-	ADD.L	D1,D1
-	SUB.L	D1,D0
-	MOVE.L	D0,(_D2FF2).L
-	MOVEA.L	D0,A3
-	MOVE.B	$10(A1),D0
-	CMP.B	#16,D0
-	BEQ.S	_L10F2
-	CMP.B	#24,D0
-	BEQ.S	_L1128
-	RTS
-
-_L10F2:
-	CMPA.L	D2,A3
-	BGE.S	_L116A
-	MOVEQ	#0,D0
-	MOVE.B	(A0)+,D0
-	BMI.S	_L1110
-_L10FC:
-	MOVEQ	#0,D1
-	MOVE.W	(A0)+,D1
-	ROL.W	#8,D1
-	ROR.L	#5,D1
-	ADD.W	D1,D1
-	ROL.L	#5,D1
-	MOVE.W	D1,(A3)+
-	DBRA	D0,_L10FC
-	BRA.S	_L10F2
-_L1110:
-	BCLR.L	#7,D0
-	MOVEQ	#0,D1
-	MOVE.W	(A0)+,D1
-	ROL.W	#8,D1
-	ROR.L	#5,D1
-	ADD.W	D1,D1
-	ROL.L	#5,D1
-_L1120:
-	MOVE.W	D1,(A3)+
-	DBRA	D0,_L1120
-	BRA.S	_L10F2
-_L1128:
-	CMPA.L	D2,A3
-	BEQ.S	_L116A
-	MOVEQ	#0,D0
-	MOVE.B	(A0)+,D0
-	BMI.S	_L114C
-_L1132:
-	MOVE.B	(A0)+,D1
-	ROR.L	#8,D1
-	MOVE.B	(A0)+,D1
-	LSR.W	#2,D1
-	ROR.L	#6,D1
-	MOVE.B	(A0)+,D1
-	LSR.W	#3,D1
-	ROR.L	#5,D1
-	SWAP	D1
-	MOVE.W	D1,(A3)+
-	DBRA	D0,_L1132
-	BRA.S	_L1128
-_L114C:
-	BCLR.L	#7,D0
-	MOVE.B	(A0)+,D1
-	ROR.L	#8,D1
-	MOVE.B	(A0)+,D1
-	LSR.W	#2,D1
-	ROR.L	#6,D1
-	MOVE.B	(A0)+,D1
-	LSR.W	#3,D1
-	ROR.L	#5,D1
-	SWAP	D1
-_L1162:
-	MOVE.W	D1,(A3)+
-	DBRA	D0,_L1162
-	BRA.S	_L1128
-_L116A:
-	MOVEA.L	_D2FF2(PC),A0
-	MOVEA.L	_B4F4E(PC),A3
-	MOVEA.L	_B32CC(PC),A2
-	MOVEQ	#0,D1
-	MOVE.W	_B36E8(PC),D1
-	SUB.W	_D2708(PC),D1
-	ADD.W	D1,D1
-	MOVE.W	8(A2),D3
-	SUBQ.W	#1,D3
-_L1188:
-	MOVE.W	6(A2),D2
-	SUBQ.W	#1,D2
-_L118E:
-	MOVE.W	(A0)+,(A3)+
-	DBRA	D2,_L118E
-	ADDA.W	D1,A3
-	DBRA	D3,_L1188
 	RTS
 
 _L119C:
@@ -1659,7 +1682,28 @@ _L1200:
 	ROL.W	D0,D1
 	MULU.W	#3,D1
 	ADDA.W	D1,A1
-_L1222:
+_L1222:						; v1.2: skip extension blocks,
+	MOVEA.L	_D2BEA(PC),A2			; GIF89a pictures often have them
+	ADDA.L	_B32C4(PC),A2			; A2 = end of file
+GIF_BLOCK:
+	CMPA.L	A2,A1
+	BHS.W	_L01E0
+	CMPI.B	#$21,(A1)			; Extension
+	BNE.S	GIF_DESCRIPTOR
+	ADDQ.L	#2,A1
+GIF_SUBBLOCK:
+	CMPA.L	A2,A1
+	BHS.W	_L01E0
+	MOVEQ	#0,D0
+	MOVE.B	(A1)+,D0
+	BEQ.S	GIF_BLOCK
+	ADDA.L	D0,A1
+	BRA.S	GIF_SUBBLOCK
+GIF_DESCRIPTOR:
+	CMPI.B	#$2C,(A1)			; Image descriptor
+	BNE.W	_L01E0
+	BTST	#6,9(A1)			; Interlaced
+	SNE	(GIF_INTERLACED).L
 	MOVE.B	6(A1),D0
 	LSL.W	#8,D0
 	MOVE.B	5(A1),D0
@@ -1674,6 +1718,7 @@ _L1222:
 
 _L124A:
 	BSR.W	_L0F6E
+	MOVEM.L	D2-D7/A2-A4,-(A7)		; v1.2
 	MOVE.W	_B36E8(PC),D0
 	MULU.W	_B36EA(PC),D0
 	MOVE.W	_D2708(PC),D1
@@ -1682,10 +1727,22 @@ _L124A:
 	SUB.L	D1,D0
 	ADD.L	_D2BEE(PC),D0
 	MOVE.L	D0,(_D2FFA).L
+	CLR.L	(GIF_BUFFER).L
+	TST.B	(GIF_INTERLACED).L		; v1.2: interlaced pictures are
+	BEQ.S	GIF_UNPACK			; unpacked into a buffer of their
+	MOVE.L	D1,-(A7)			; own, as the lines are converted
+	MOVE.W	#72,-(A7)			; out of order and could overwrite
+	TRAP	#1				; lines not converted yet.
+	ADDQ.L	#6,A7				; Malloc
+	TST.L	D0
+	BEQ.W	_L01E0
+	MOVE.L	D0,(GIF_BUFFER).L
+	MOVE.L	D0,(_D2FFA).L
+GIF_UNPACK:
 	MOVE.L	#_D2FFE,(_B4F52).L
-	BSR.S	_L12DC
+	BSR.W	_L12DC
 	TST.W	D0
-	BMI.S	_L12DA
+	BMI.W	_L12DA
 	BSR.W	_L1720
 	LEA	_B374E(PC),A0
 	MOVEQ	#0,D0
@@ -1693,17 +1750,34 @@ _L124A:
 _L128C:
 	MOVE.L	D0,(A0)+
 	DBRA	D1,_L128C
+
+;	v1.2: Version 1.1 converted as many lines as the screen has, reading
+;	past the unpacked picture and writing past the screen for pictures
+;	lower than the screen, converted whole screen lines (overwriting the
+;	start of the next line), and ignored interlacing.
+
 	MOVE.W	_D3008(PC),D0
-	SUBQ.L	#1,D0
+	SUBQ.L	#1,D0				; D0 = width - 1
 	MOVEA.L	_D2FFA(PC),A0
-	MOVEA.L	_B4F4E(PC),A2
-	MOVE.W	_B36E8(PC),D3
-	MOVE.W	D3,D4
+	MOVEA.L	_B4F4E(PC),A2			; A2 = first screen line
+	MOVEQ	#0,D4
+	MOVE.W	_B36E8(PC),D4			; D4 = bytes per screen line
+	MOVEA.L	_B32CC(PC),A3
+	MOVE.W	6(A3),D3			; Width rounded up to 16 pixels
 	LSR.W	#4,D3
 	MOVE.W	D3,(_B8F62).L
+	MOVEQ	#0,D7
+	MOVE.W	8(A3),D7			; D7 = height
+	MOVE.L	D7,D2
+	SUBQ.W	#1,D2
 	MOVE.L	#_B374E,D3
-	MOVE.W	_B36EA(PC),D2
-	SUBQ.L	#1,D2
+	LEA	GIF_PASSES(PC),A4		; Line order
+	TST.B	(_D2FFE+15).L			; Interlaced?
+	BEQ.S	GIF_ORDER
+	ADDQ.L	#8,A4
+GIF_ORDER:
+	MOVE.W	(A4)+,D5			; D5 = screen line
+	MOVE.W	(A4)+,D6			; D6 = step
 _L12BA:
 	MOVE.W	D0,D1
 	MOVEA.L	D3,A1
@@ -1711,12 +1785,39 @@ _L12BE:
 	MOVE.B	(A0)+,(A1)+
 	DBRA	D1,_L12BE
 	MOVE.L	D3,(_B8F5A).L
-	MOVE.L	A2,(_B8F5E).L
+	MOVE.L	D5,D1
+	MULU.L	D4,D1
+	ADD.L	A2,D1
+	MOVE.L	D1,(_B8F5E).L
 	BSR.W	_L17E2
-	ADDA.W	D4,A2
+	ADD.W	D6,D5
+GIF_NEXTPASS:
+	CMP.W	D7,D5
+	BLO.S	GIF_NEXTLINE
+	TST.W	(A4)				; Last pass done?
+	BMI.S	GIF_NEXTLINE
+	MOVE.W	(A4)+,D5
+	MOVE.W	(A4)+,D6
+	BRA.S	GIF_NEXTPASS
+GIF_NEXTLINE:
 	DBRA	D2,_L12BA
 _L12DA:
+	MOVE.L	(GIF_BUFFER).L,D0
+	BEQ.S	GIF_DONE
+	CLR.L	(GIF_BUFFER).L
+	MOVE.L	D0,-(A7)
+	MOVE.W	#73,-(A7)			; Mfree
+	TRAP	#1
+	ADDQ.L	#6,A7
+GIF_DONE:
+	MOVEM.L	(A7)+,D2-D7/A2-A4
 	RTS
+
+;	First line and step of each pass, ended by -1.
+
+GIF_PASSES:
+	dc.w	0,1,-1,0			; Not interlaced
+	dc.w	0,8,4,8,2,4,1,2,-1,0		; Interlaced
 
 _L12DC:
 	MOVEM.L	D3-D7/A2-A6,-(A7)
@@ -2058,7 +2159,7 @@ _L15F8:
 	LSR.W	#4,D5
 	SUBQ.W	#1,D5
 	MOVEQ	#0,D0
-	MOVEA.L	_B8F56(PC),A2
+	MOVEA.L	(_B8F56).L,A2
 	MOVE.B	$10(A2),D0
 	LEA	_D3010(PC),A5
 	MOVE.L	-4(A5,D0.W*4),D0
@@ -2089,55 +2190,142 @@ _L166C:
 	DBRA	D4,_L166C
 	RTS
 
+LELONG	MACRO					; Read little endian long \1 to \2.
+	MOVE.L	\1,\2
+	ROR.W	#8,\2
+	SWAP	\2
+	ROR.W	#8,\2
+	ENDM
+
+;	BMP header parser. A0 = format table entry.
+;
+;	v1.2: rewritten together with the loader. Checks that the picture is
+;	an uncompressed 256-colour Windows BMP that fits in the file, reads
+;	the 32-bit width and height and allows top-down pictures.
+
 _L167C:
 	MOVEA.L	(_D2BEA).L,A1
-	MOVE.B	$13(A1),6(A0)
-	MOVE.B	$12(A1),7(A0)
-	MOVE.B	$17(A1),8(A0)
-	MOVE.B	$16(A1),9(A0)
+	CMPI.L	#54,(_B32C4).L			; File size
+	BLO.W	_L01E0
+	CMPI.W	#'BM',(A1)
+	BNE.W	_L01E0
+	LELONG	14(A1),D0			; Info header size
+	CMP.L	#40,D0
+	BLO.W	_L01E0
+	CMPI.W	#$0800,28(A1)			; 8 bits per pixel
+	BNE.W	_L01E0
+	TST.L	30(A1)				; Not compressed
+	BNE.W	_L01E0
+	LELONG	18(A1),D0			; Width
+	TST.L	D0
+	BEQ.W	_L01E0
+	CMP.L	#$7FF0,D0
+	BHI.W	_L01E0
+	MOVE.W	D0,(_D2708).L			; Real width
+	MOVE.L	D0,D2
+	ADDI.W	#15,D0
+	ANDI.W	#$FFF0,D0
+	MOVE.W	D0,6(A0)			; Width rounded up to 16 pixels
+	LELONG	22(A1),D1			; Height, negative if top-down
+	SMI	(BMP_TOPDOWN).L
+	BPL.S	BMP_BOTTOMUP
+	NEG.L	D1
+BMP_BOTTOMUP:
+	TST.L	D1
+	BEQ.W	_L01E0
+	CMP.L	#$7FFF,D1
+	BHI.W	_L01E0
+	MOVE.W	D1,8(A0)
 	MOVE.W	#8,$A(A0)
+	ADDQ.L	#3,D2				; Lines are padded to 4 bytes.
+	ANDI.W	#$FFFC,D2
+	MULU.L	D1,D2
+	LELONG	10(A1),D0			; Offset of the pixels
+	ADD.L	D0,D2
+	BCS.W	_L01E0
+	CMP.L	(_B32C4).L,D2			; Pixels must fit in the file.
+	BHI.W	_L01E0
 	RTS
 
+;	BMP loader.
+;
+;	v1.2: rewritten. Version 1.1 took the red component of each colour
+;	from the previous palette entry, read lines of the width rounded down
+;	to 16 pixels instead of the padded line length (skewing pictures with
+;	other widths), assumed the palette right after a 40-byte info header
+;	and read only the low word of the pixel offset.
+
 _L16A2:
-	BSR.S	_L1720
-	MOVEA.L	_D2BEA(PC),A0
-	LEA	$34(A0),A0
-	LEA	PALETTE0(PC),A1
-	MOVE.W	#$FF,D0
-_L16B4:
-	MOVE.B	(A0),(A1)+
-	MOVE.B	3(A0),(A1)+
-	ADDQ.L	#1,A1
-	MOVE.B	2(A0),(A1)+
+	BSR.W	_L1720
+	MOVEM.L	D2-D7/A2-A3,-(A7)
+	MOVEA.L	_D2BEA(PC),A1
+	LELONG	14(A1),D0			; Palette after the info header
+	LEA	14(A1,D0.L),A0
+	LELONG	46(A1),D1			; Colours used, 0 = all
+	SUBQ.L	#1,D1
+	CMP.L	#255,D1
+	BLS.S	BMP_COLOURS
+	MOVE.L	#255,D1
+BMP_COLOURS:
+	LEA	PALETTE0(PC),A2
+_L16B4:						; Blue, green, red, 0
+	MOVE.B	2(A0),(A2)+			; to red, green, 0, blue
+	MOVE.B	1(A0),(A2)+
+	CLR.B	(A2)+
+	MOVE.B	(A0),(A2)+
 	ADDQ.L	#4,A0
-	DBRA	D0,_L16B4
-	BSR.W	_L0F6E
+	DBRA	D1,_L16B4
+
+	BSR.W	_L0F6E				; Calculate screen position.
+	LEA	_B374E(PC),A0			; Clear the line buffer, so the
+	MOVE.W	#$5FF,D1			; padding up to 16 pixels is
+_L16E0:						; colour 0.
+	CLR.L	(A0)+
+	DBRA	D1,_L16E0
 	MOVEA.L	_B32CC(PC),A0
-	MOVE.W	8(A0),D0
-	SUBQ.W	#1,D0
+	MOVE.W	6(A0),D1
+	LSR.W	#4,D1
+	MOVE.W	D1,(_B8F62).L
+	MOVEQ	#0,D6
+	MOVE.W	8(A0),D6			; D6 = height
+	MOVEQ	#0,D7
+	MOVE.W	_D2708(PC),D7			; D7 = width
+	MOVE.L	D7,D5
+	ADDQ.L	#3,D5
+	ANDI.W	#$FFFC,D5			; D5 = bytes per BMP line
 	MOVEQ	#0,D2
 	MOVE.W	_B36E8(PC),D2
 	LSR.W	#4,D2
 	ADD.W	D2,D2
-	MULU.W	_B36EC(PC),D2
-	MOVE.W	6(A0),D1
-	LSR.W	#4,D1
-	MOVE.W	D1,(_B8F62).L
-	MOVEA.L	_D2BEA(PC),A0
-	MOVE.B	$B(A0),D3
-	LSL.W	#8,D3
-	MOVE.B	$A(A0),D3
-	ADDA.W	D3,A0
-	MOVE.L	A0,(_B8F5A).L
-	MOVEA.L	_B4F4E(PC),A1
-	MOVE.L	D2,D3
-	MULU.W	D0,D3
-	ADDA.L	D3,A1
+	MULU.W	_B36EC(PC),D2			; D2 = bytes per screen line
+	LELONG	10(A1),D0
+	LEA	(A1,D0.L),A2			; A2 = pixels
+	MOVEA.L	_B4F4E(PC),A3			; A3 = screen line
+	TST.B	(BMP_TOPDOWN).L
+	BNE.S	_L16F8
+	MOVE.L	D6,D0				; Bottom-up: start with the
+	SUBQ.L	#1,D0				; last screen line.
+	MULU.L	D2,D0
+	ADDA.L	D0,A3
+	NEG.L	D2
+_L16F8:
+	SUBQ.W	#1,D6
 _L170E:
-	MOVE.L	A1,(_B8F5E).L
+	MOVEA.L	A2,A0
+	LEA	_B374E(PC),A1
+	MOVE.W	D7,D0
+	SUBQ.W	#1,D0
+_L1712:
+	MOVE.B	(A0)+,(A1)+
+	DBRA	D0,_L1712
+	PEA	_B374E(PC)
+	MOVE.L	(A7)+,(_B8F5A).L
+	MOVE.L	A3,(_B8F5E).L
 	BSR.W	_L17E2
-	SUBA.L	D2,A1
-	DBRA	D0,_L170E
+	ADDA.L	D5,A2
+	ADDA.L	D2,A3
+	DBRA	D6,_L170E
+	MOVEM.L	(A7)+,D2-D7/A2-A3
 	RTS
 
 _L1720:
@@ -3908,6 +4096,14 @@ _B8F72:
 _B8F74:
 	ds.b	4
 _B8F78:
+	ds.b	4
+TGA_BUFFER:					; v1.2: RLE Targa buffer
+	ds.b	4
+BMP_TOPDOWN:					; v1.2: BMP stored top-down
+	ds.b	2
+GIF_INTERLACED:					; v1.2: GIF is interlaced
+	ds.b	2
+GIF_BUFFER:					; v1.2: buffer for interlaced GIF
 	ds.b	4
 Q16_PIXELBYTES:
 	ds.b	4

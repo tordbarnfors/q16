@@ -109,7 +109,7 @@ SUPPORTED FILEFORMATS
 Shower supports the following fileformats:
 
 .ART		Art Director
-.BMP		PC-Bitmap (still buggy and only 256-color pictures)
+.BMP		PC-Bitmap (only uncompressed 256-color pictures)
 .DOO/.MUR	Doodle/Object Editor Mural (same fileformat)
 .GIF		Compuserve Graphics Interchange Format
 .IFF		IFF
@@ -126,7 +126,7 @@ Shower supports the following fileformats:
 .Q16		Q16 (RGB565 True Color, alpha is blended against black)
 .RAG		RAG-D!
 .RAW		Persistence of Vision (POV) Raytracer output.
-.TGA		Targa (only unpacked/RLE-packed 16/24-bit RGB images)
+.TGA		Targa (only unpacked/RLE-packed 16/24/32-bit RGB images)
 .TRU            IndyPaint (only pictures with "Indy"-header, no blocks)
 
 
@@ -322,3 +322,21 @@ Version 1.2 (2026):
 	+ Q16-support added. Q16 is a fast, lossless format for 16-bit
 	   RGB565 pictures with optional 8-bit alpha. Version 1.2 was built
 	   from a disassembly of version 1.1 since the source code was lost.
+
+	+ Targa-bugs fixed: pictures with a width that isn't a multiple
+	   of 16 were skewed, pictures stored bottom-up (most of them) were
+	   shown upside down, uncompressed 16-bit pictures got the wrong
+	   colors and color maps were skipped by the wrong amount. RLE
+	   packets reaching past the picture can no longer overwrite memory.
+	   32-bit pictures are supported (the alpha channel is ignored).
+
+	+ GIF-bugs fixed: interlaced pictures are displayed correctly,
+	   GIF89a pictures with extension blocks before the image (common)
+	   are no longer rejected, and pictures lower than the screen no
+	   longer make Shower write past the end of the screen.
+
+	+ BMP-bugs fixed: wrong colors (the red component was taken from
+	   the previous palette entry), skewed pictures with a width that
+	   isn't a multiple of 16, and pictures stored top-down. Compressed
+	   and non-256-color BMP files are rejected instead of displayed as
+	   garbage.

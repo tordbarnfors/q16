@@ -69,7 +69,9 @@ numbered labels were offsets into a neighbouring variable and are now
 written as such, for example `screen+1` for the second byte of `screen`.
 
 The code is in lower case (mnemonics, registers, hex numbers) and laid out
-for a tab width of 4: operands in column 12, comments in column 48.
+for a tab width of 4: operands in column 12, comments in column 48, and in
+tables of variables and equates the mnemonic in column 20. The other
+assembler sources (`m68k/`, the plugins) use the same layout.
 
 The renaming was checked to use every local label only inside its own
 function, and the result assembles to exactly the same SHOWER.TTP as

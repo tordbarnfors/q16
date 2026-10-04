@@ -2323,7 +2323,7 @@ iff_load:
 	dbra	d4,.raw_line
 	rts
 
-lelong	macro									; Read little endian long \1 to \2.
+lelong				macro						; Read little endian long \1 to \2.
 	move.l	\1,\2
 	ror.w	#8,\2
 	swap	\2

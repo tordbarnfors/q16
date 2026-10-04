@@ -6,51 +6,51 @@
 ; at +12 and the interface version at +16.
 ;
 ; Assembled with PUREC_SMURF defined for Smurf built with Pure C, which
-; passes the GARGAMEL pointer in A0 and has its service functions take
+; passes the GARGAMEL pointer in a0 and has its service functions take
 ; their arguments in registers.
 
-	SECTION	TEXT
+	section	text
 
-	XREF	imp_module_main
-	XREF	module_info
-	XDEF	_errno
+	xref	imp_module_main
+	xref	module_info
+	xdef	_errno
 
-	clr.w	-(sp)			; Pterm0 if started as a program.
+	clr.w	-(sp)								; Pterm0 if started as a program.
 	trap	#1
-	IFD	PUREC_SMURF
+	ifd		PUREC_SMURF
 	bra.w	pc_entry
-	ELSE
+	else
 	bra.w	imp_module_main
-	ENDC
+	endc
 	dc.l	'SIMD'
 	dc.l	module_info
 	dc.l	$0101
 
-	IFD	PUREC_SMURF
+	ifd		PUREC_SMURF
 
-;	short imp_module_main( GARGAMEL *smurf_struct /* A0 */ ), result in D0.
+;	short imp_module_main( GARGAMEL *smurf_struct /* a0 */ ), result in d0.
 
 pc_entry:
 	move.l	a0,-(sp)
-	jsr	imp_module_main
+	jsr		imp_module_main
 	addq.l	#4,sp
 	rts
 
 ;	void *pc_call_SMalloc( void *(*fn)(long), long amount );
 ;	void pc_call_SMfree( void (*fn)(void *), void *ptr );
 ;
-;	Call Pure C functions: amount in D0, ptr in A0, result in A0. Pure C
-;	functions may destroy D2/A2, which gcc expects to be preserved.
+;	Call Pure C functions: amount in d0, ptr in a0, result in a0. Pure C
+;	functions may destroy d2/a2, which gcc expects to be preserved.
 
-	XDEF	pc_call_SMalloc,_pc_call_SMalloc
-	XDEF	pc_call_SMfree,_pc_call_SMfree
+	xdef	pc_call_SMalloc,_pc_call_SMalloc
+	xdef	pc_call_SMfree,_pc_call_SMfree
 
 pc_call_SMalloc:
 _pc_call_SMalloc:
 	movem.l	d2/a2,-(sp)
 	move.l	12(sp),a1
 	move.l	16(sp),d0
-	jsr	(a1)
+	jsr		(a1)
 	move.l	a0,d0
 	movem.l	(sp)+,d2/a2
 	rts
@@ -60,12 +60,12 @@ _pc_call_SMfree:
 	movem.l	d2/a2,-(sp)
 	move.l	12(sp),a1
 	move.l	16(sp),a0
-	jsr	(a1)
+	jsr		(a1)
 	movem.l	(sp)+,d2/a2
 	rts
 
-	ENDC
+	endc
 
-	SECTION	DATA
+	section	data
 
-_errno:	dc.l	0
+_errno:				dc.l	0

@@ -7,34 +7,34 @@
 ;
 ; Assemble with: vasmm68k_mot -devpac -Faout -o ldgstart.o ldgstart.s
 
-STACKSIZE	EQU	4096
+STACKSIZE			equ		4096
 
-	SECTION	TEXT
+	section	text
 
-	XDEF	_start,_basepage
-	XREF	_main
+	xdef	_start,_basepage
+	xref	_main
 
 _start:
-	move.l	4(sp),a0		; Basepage
+	move.l	4(sp),a0							; Basepage
 	move.l	a0,_basepage
-	move.l	12(a0),d0		; Text, data and BSS length
+	move.l	12(a0),d0							; Text, data and BSS length
 	add.l	20(a0),d0
 	add.l	28(a0),d0
-	add.l	#256+STACKSIZE,d0	; Basepage and stack
-	and.b	#$FC,d0
-	lea	(a0,d0.l),sp		; Stack at the end of the block
+	add.l	#256+STACKSIZE,d0					; Basepage and stack
+	and.b	#$fc,d0
+	lea		(a0,d0.l),sp						; Stack at the end of the block
 	move.l	d0,-(sp)
 	move.l	a0,-(sp)
 	clr.w	-(sp)
-	move.w	#$4A,-(sp)		; Mshrink
+	move.w	#$4a,-(sp)							; Mshrink
 	trap	#1
-	lea	12(sp),sp
-	jsr	_main
+	lea		12(sp),sp
+	jsr		_main
 	move.w	d0,-(sp)
-	move.w	#$4C,-(sp)		; Pterm
+	move.w	#$4c,-(sp)							; Pterm
 	trap	#1
 
-	SECTION	BSS
+	section	bss
 
 _basepage:
 	ds.l	1

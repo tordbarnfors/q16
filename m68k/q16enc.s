@@ -19,13 +19,13 @@
 ;
 ;=========================================================================
 
-	OPT	P=68030
+	opt		p=68030
 
-	SECTION	TEXT
+	section	text
 
-	XDEF	q16_writeHeader,_q16_writeHeader
-	XDEF	q_encPix,_q_encPix
-	XDEF	q_encAlp,_q_encAlp
+	xdef	q16_writeHeader,_q16_writeHeader
+	xdef	q_encPix,_q_encPix
+	xdef	q_encAlp,_q_encAlp
 
 
 ;____ q16_writeHeader() __________________________________________________
@@ -35,18 +35,18 @@
 ;	                      unsigned long pixelBytes, unsigned long alphaBytes,
 ;	                      unsigned long flags );
 
-WH_HEADER	EQU	4
-WH_WIDTH	EQU	8
-WH_HEIGHT	EQU	12
-WH_PIXELBYTES	EQU	16
-WH_ALPHABYTES	EQU	20
-WH_FLAGS	EQU	24
+WH_HEADER			equ		4
+WH_WIDTH			equ		8
+WH_HEIGHT			equ		12
+WH_PIXELBYTES		equ		16
+WH_ALPHABYTES		equ		20
+WH_FLAGS			equ		24
 
 q16_writeHeader:
 _q16_writeHeader:
 	move.l	WH_HEADER(sp),a0
-	move.l	#$51353635,(a0)		; "Q565"
-	move.b	#1,4(a0)		; Version
+	move.l	#$51353635,(a0)						; "Q565"
+	move.b	#1,4(a0)							; Version
 	move.b	WH_FLAGS+3(sp),5(a0)
 	move.w	WH_WIDTH+2(sp),d0
 	ror.w	#8,d0
@@ -94,8 +94,8 @@ _q16_writeHeader:
 ;	a4 = end of input
 ;	a5 = count byte of current literal run
 
-EP_PALSIZE	EQU	128
-EP_ARGS		EQU	4+11*4+EP_PALSIZE	; Return address, saved registers, palette.
+EP_PALSIZE			equ		128
+EP_ARGS				equ		4+11*4+EP_PALSIZE	; Return address, saved registers, palette.
 
 ;	DELTA pixel,previous,result,temp1,temp2,toolarge
 ;
@@ -103,16 +103,16 @@ EP_ARGS		EQU	4+11*4+EP_PALSIZE	; Return address, saved registers, palette.
 ;	branches to toolarge if the difference doesn't fit. Same test as
 ;	q16_lib.c: red and blue -2 to +1, green -4 to +3.
 
-DELTA	MACRO
-	move.w	\1,\3			; Red
+delta				macro
+	move.w	\1,\3								; Red
 	lsr.w	d5,\3
 	move.w	\2,\4
 	lsr.w	d5,\4
 	sub.w	\4,\3
 	addq.w	#2,\3
 	cmp.w	#4,\3
-	bhs	\6
-	move.w	\1,\4			; Green
+	bhs		\6
+	move.w	\1,\4								; Green
 	lsr.w	#5,\4
 	and.w	#63,\4
 	move.w	\2,\5
@@ -121,33 +121,33 @@ DELTA	MACRO
 	sub.w	\5,\4
 	addq.w	#4,\4
 	cmp.w	#8,\4
-	bhs	\6
+	bhs		\6
 	lsl.w	#5,\3
 	lsl.w	#2,\4
 	or.w	\4,\3
-	move.w	\1,\4			; Blue
+	move.w	\1,\4								; Blue
 	moveq	#31,\5
 	and.w	\5,\4
 	and.w	\2,\5
 	sub.w	\5,\4
 	addq.w	#2,\4
 	cmp.w	#4,\4
-	bhs	\6
+	bhs		\6
 	or.w	\4,\3
 	or.b	#$80,\3
-	ENDM
+	endm
 
 q_encPix:
 _q_encPix:
 	movem.l	d2-d7/a2-a6,-(sp)
-	lea	-EP_PALSIZE(sp),sp
+	lea		-EP_PALSIZE(sp),sp
 
-	move.l	EP_ARGS(sp),a1		; pDest
-	move.l	EP_ARGS+4(sp),a0	; pBegin
-	move.l	EP_ARGS+8(sp),a4	; pEnd
-	move.l	EP_ARGS+12(sp),a2	; staticTable
+	move.l	EP_ARGS(sp),a1						; pDest
+	move.l	EP_ARGS+4(sp),a0					; pBegin
+	move.l	EP_ARGS+8(sp),a4					; pEnd
+	move.l	EP_ARGS+12(sp),a2					; staticTable
 
-	move.l	sp,a3			; Clear the palette.
+	move.l	sp,a3								; Clear the palette.
 	moveq	#EP_PALSIZE/4-1,d0
 .clear:
 	clr.l	(a3)+
@@ -161,14 +161,14 @@ _q_encPix:
 
 .loop:
 	cmpa.l	a4,a0
-	bhs	.done
+	bhs		.done
 	move.w	(a0)+,d1
 	cmp.w	d7,d1
 	bne.s	.notrepeat
 
-	; 001xxxxx - Repeat previous pixel (1-32).
+												; 001xxxxx - Repeat previous pixel (1-32).
 
-	moveq	#0,d2			; d2 = count - 1
+	moveq	#0,d2								; d2 = count - 1
 .repeat:
 	cmpa.l	a4,a0
 	bhs.s	.repeatend
@@ -183,7 +183,7 @@ _q_encPix:
 	move.b	d2,(a1)+
 	bra.s	.loop
 
-	; 01xxxxxx - Pixel from palette.
+												; 01xxxxxx - Pixel from palette.
 
 .notrepeat:
 	move.b	(a2,d1.l),d0
@@ -195,40 +195,40 @@ _q_encPix:
 	move.w	d1,d7
 	bra.s	.loop
 
-	; 1rrgggbb - Delta from previous pixel.
+												; 1rrgggbb - Delta from previous pixel.
 
 .notindex:
-	DELTA	d1,d7,d2,d3,d4,.literal
+	delta	d1,d7,d2,d3,d4,.literal
 	move.b	d2,(a1)+
 	move.w	d1,(a3,d0.w*2)
 	move.w	d1,d7
-	bra	.loop
+	bra		.loop
 
-	; 000xxxxx - New pixels (1-32), little endian. Continues for as long
-	; as the next pixel can't be stored in a better way.
+												; 000xxxxx - New pixels (1-32), little endian. Continues for as long
+												; as the next pixel can't be stored in a better way.
 
 .literal:
-	move.l	a1,a5			; Count byte, filled in when done.
+	move.l	a1,a5								; Count byte, filled in when done.
 	addq.l	#1,a1
 	move.w	d1,d2
 	ror.w	#8,d2
 	move.w	d2,(a1)+
 	move.w	d1,(a3,d0.w*2)
-	moveq	#0,d6			; d6 = count - 1
+	moveq	#0,d6								; d6 = count - 1
 .literalnext:
 	cmp.w	#31,d6
 	bhs.s	.literalend
 	cmpa.l	a4,a0
 	bhs.s	.literalend
 	moveq	#0,d3
-	move.w	(a0),d3			; d3 = next pixel
+	move.w	(a0),d3								; d3 = next pixel
 	cmp.w	d1,d3
-	beq.s	.literalend		; Start of repeat.
+	beq.s	.literalend							; Start of repeat.
 	move.b	(a2,d3.l),d0
 	cmp.w	(a3,d0.w*2),d3
-	beq.s	.literalend		; Can be taken from palette.
-	DELTA	d3,d1,d2,d4,d7,.literalpixel
-	bra.s	.literalend		; Can be stored as delta.
+	beq.s	.literalend							; Can be taken from palette.
+	delta	d3,d1,d2,d4,d7,.literalpixel
+	bra.s	.literalend							; Can be stored as delta.
 .literalpixel:
 	move.w	d3,(a3,d0.w*2)
 	move.w	d3,d1
@@ -240,12 +240,12 @@ _q_encPix:
 .literalend:
 	move.b	d6,(a5)
 	move.w	d1,d7
-	bra	.loop
+	bra		.loop
 
 .done:
 	move.l	a1,d0
 	move.l	a1,a0
-	lea	EP_PALSIZE(sp),sp
+	lea		EP_PALSIZE(sp),sp
 	movem.l	(sp)+,d2-d7/a2-a6
 	rts
 
@@ -273,18 +273,18 @@ _q_encPix:
 ;	a3 = temp
 ;	a5 = count byte of current verbatim span
 
-EA_ARGS		EQU	4+7*4			; Return address, saved registers.
+EA_ARGS				equ		4+7*4				; Return address, saved registers.
 
 q_encAlp:
 _q_encAlp:
 	movem.l	d2-d3/d6-d7/a2-a3/a5,-(sp)
 
-	move.l	EA_ARGS(sp),a1		; pDest
-	move.l	EA_ARGS+4(sp),a0	; pBegin
-	move.l	EA_ARGS+8(sp),a2	; pEnd
+	move.l	EA_ARGS(sp),a1						; pDest
+	move.l	EA_ARGS+4(sp),a0					; pBegin
+	move.l	EA_ARGS+8(sp),a2					; pEnd
 
 	cmpa.l	a2,a0
-	bhs	.return		; Nothing to compress.
+	bhs		.return								; Nothing to compress.
 
 	move.l	a1,a5
 	addq.l	#1,a1
@@ -295,7 +295,7 @@ _q_encAlp:
 .loop:
 	cmpa.l	a2,a0
 	bhs.s	.end
-	lea	1(a0),a3
+	lea		1(a0),a3
 	cmpa.l	a2,a3
 	bhs.s	.verbatim
 	cmp.b	(a0),d7
@@ -303,11 +303,11 @@ _q_encAlp:
 	cmp.b	(a3),d7
 	bne.s	.verbatim
 
-	; At least two more of the last value, store as repeats.
+												; At least two more of the last value, store as repeats.
 
 	move.b	d6,d0
 	subq.b	#1,d0
-	move.b	d0,(a5)			; Close current span.
+	move.b	d0,(a5)								; Close current span.
 	addq.l	#1,a3
 .scan:
 	cmpa.l	a2,a3
@@ -318,7 +318,7 @@ _q_encAlp:
 	bra.s	.scan
 .scanned:
 	move.l	a3,d2
-	sub.l	a0,d2			; d2 = repeats
+	sub.l	a0,d2								; d2 = repeats
 .repeat:
 	cmp.l	#2,d2
 	blo.s	.repeatdone
@@ -335,8 +335,8 @@ _q_encAlp:
 	bra.s	.repeat
 .repeatdone:
 	cmpa.l	a2,a0
-	beq.s	.return		; Input ended with repeats.
-	move.l	a1,a5			; New span.
+	beq.s	.return								; Input ended with repeats.
+	move.l	a1,a5								; New span.
 	addq.l	#1,a1
 	moveq	#0,d6
 	bra.s	.copy
@@ -344,7 +344,7 @@ _q_encAlp:
 .verbatim:
 	cmp.w	#128,d6
 	bne.s	.copy
-	move.b	#127,(a5)		; Span full, start a new one.
+	move.b	#127,(a5)							; Span full, start a new one.
 	move.l	a1,a5
 	addq.l	#1,a1
 	moveq	#0,d6

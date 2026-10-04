@@ -59,3 +59,6 @@ bench/FALCBNCH.TOS
 
 # Shower build output
 shower/SHOWER.TTP
+shower/test/LAUNCH.TOS
+shower/test/shots/
+shower/test/hatari.log

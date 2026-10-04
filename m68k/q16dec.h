@@ -93,6 +93,16 @@ int Q16CALL		q_decPix( unsigned short * pDest,
 						  unsigned long nbPixels,
 						  const unsigned char staticTable[65536] );
 
+/* Same as q_decPix(), but calculates the palette index of each new pixel
+*  with the hash formula instead of using the static table. In q16decf.s,
+*  link with it to use this. Needs neither the table nor
+*  q16_setupStaticTable(), but decodes slower; see ../bench/README.md.
+*/
+
+int Q16CALL		q_decPixF( unsigned short * pDest,
+						   const unsigned char * pBegin, const unsigned char * pEnd,
+						   unsigned long nbPixels );
+
 /* Decodes the complete alpha data between pBegin and pEnd into exactly
 *  nbPixels alpha values at pDest.
 *  Returns 0 if ok, -1 if the data is corrupt or doesn't decode into exactly

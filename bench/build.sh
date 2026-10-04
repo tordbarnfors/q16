@@ -18,9 +18,10 @@ CFLAGS="-m68030 -msoft-float -O2 -fomit-frame-pointer -std=gnu99 -Wall"
 
 $VASM -quiet -devpac -Faout -o q16dec.o ../m68k/q16dec.s
 $VASM -quiet -devpac -Faout -o q16enc.o ../m68k/q16enc.s
+$VASM -quiet -devpac -Faout -o q16decf.o ../m68k/q16decf.s
 $VASM -quiet -devpac -m68030 -Faout -o natfeats.o natfeats.s
 m68k-atari-mint-gcc $CFLAGS -I"$PREFIX/include" -c falcbench.c q16lib_c.c
-m68k-atari-mint-gcc -m68000 falcbench.o q16lib_c.o q16dec.o q16enc.o natfeats.o \
+m68k-atari-mint-gcc -m68000 falcbench.o q16lib_c.o q16dec.o q16decf.o q16enc.o natfeats.o \
 	-L"$PREFIX/lib" -lpng -lz -ljpeg -lm -o FALCBNCH.TOS
 m68k-atari-mint-strip FALCBNCH.TOS
-rm -f falcbench.o q16lib_c.o q16dec.o q16enc.o natfeats.o
+rm -f falcbench.o q16lib_c.o q16dec.o q16decf.o q16enc.o natfeats.o

@@ -125,6 +125,63 @@ Encoding the pixels decoded from NAME.PNG (RGB565). JPEG encodes them as 8-bit R
   JPEG files of photos are 3-9 times smaller than Q16, at the cost of
   being lossy.
 
+### Static table or hash formula
+
+`q_decPix()` looks up the palette index of each new pixel in a 64 KB table
+that `q16_setupStaticTable()` fills in. `q_decPixF()` in `m68k/q16decf.s`
+calculates it with the formula instead, `(p + (p >> 3) + (p >> 4) + (p >> 10))
+& 63`: eight instructions instead of one table read. Only literal and delta
+pixels need the index; index and repeat opcodes don't.
+
+Measured on the emulated Falcon (decode time per picture, without setting up
+the table; the photo and GUI crops are 32x32 to 256x256 pixels cut from K01
+and GUI):
+
+| Picture | Pixels | Hashed | `q_decPix` | `q_decPixF` | Difference | Per hashed pixel |
+|---|---|---|---|---|---|---|
+| GUI | 307200 | 1.2% | 131.56 ms | 134.66 ms | +2.4% | 0.81 µs |
+| SPRITE | 76800 | 5.6% | 76.48 ms | 79.80 ms | +4.3% | 0.77 µs |
+| K03 | 307200 | 22.9% | 410.00 ms | 465.00 ms | +13.4% | 0.78 µs |
+| K01 | 307200 | 33.6% | 501.25 ms | 578.75 ms | +15.5% | 0.75 µs |
+| K15 | 307200 | 35.8% | 464.00 ms | 548.75 ms | +18.3% | 0.77 µs |
+| K23 | 307200 | 43.3% | 480.00 ms | 585.00 ms | +21.9% | 0.79 µs |
+| Photo 32x32 | 1024 | 40.0% | 2.53 ms | 2.89 ms | +14.2% | 0.88 µs |
+| Photo 64x64 | 4096 | 38.1% | 8.06 ms | 9.30 ms | +15.4% | 0.80 µs |
+| Photo 128x128 | 16384 | 34.4% | 28.85 ms | 33.11 ms | +14.8% | 0.76 µs |
+| Photo 256x256 | 65536 | 32.9% | 109.47 ms | 125.62 ms | +14.8% | 0.75 µs |
+| GUI 32x32 | 1024 | 5.0% | 0.99 ms | 1.05 ms | +6.1% | 1.18 µs |
+| GUI 64x64 | 4096 | 4.2% | 3.35 ms | 3.53 ms | +5.4% | 1.04 µs |
+| GUI 128x128 | 16384 | 3.7% | 12.04 ms | 12.57 ms | +4.4% | 0.87 µs |
+| GUI 256x256 | 65536 | 2.7% | 35.17 ms | 36.54 ms | +3.9% | 0.78 µs |
+
+"Hashed" is the share of pixels that are literals or deltas. Setting up the
+table takes **107.25 ms** (average of 20 calls), as long as decoding a whole
+640x480 GUI screen.
+
+The formula costs about **0.77 µs (12 cycles) per hashed pixel**, the same
+for all pictures (the smallest pictures measure a little higher, as fixed
+costs per call weigh more there). So, with h hashed pixels:
+
+    q_decPix  + table setup:  107.25 ms + t
+    q_decPixF:                t + 0.77 µs x h
+
+**Break-even at about 140 000 hashed pixels** (107.25 ms / 0.77 µs). In
+pixels that is 140 000 / hashed share:
+
+* Photos (23-43% hashed): 320 000 - 600 000 pixels, about 410 000 for a
+  typical photo (34% hashed), which is about 640x640. The 640x480 photos
+  decode 2-52 ms faster with `q_decPixF()` than with table setup +
+  `q_decPix()`; K23, with the most hashed pixels, is close to even.
+* Graphics, GUIs, sprites (1-5% hashed): 2.5 - 10 million pixels, far more
+  than fits in a Falcon's memory, so `q_decPixF()` is always faster.
+
+The table only pays off when it is set up once and used for many pictures:
+then `q_decPix()` wins as soon as the pictures together have more than about
+140 000 hashed pixels, for example after one large photo or a few small
+ones, and after that it is 2-22% faster per picture. For a viewer that shows
+one picture per run, like Shower, `q_decPixF()` is the better choice, and it
+also saves the 64 KB.
+
 ## PC results
 
 `pcbench.c` times encoding and decoding on a PC, using the same images. Q16,

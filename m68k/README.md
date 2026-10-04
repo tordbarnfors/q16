@@ -18,6 +18,10 @@ byte-identical to q16_lib.c. It uses `q16_setupStaticTable()` from
   d0 and a0, as compilers differ in which register they expect.
 * Reentrant, uses no DATA or BSS. The decoder needs a 64 KB table, set up by
   `q16_setupStaticTable()`, that can be shared between calls.
+  `q16decf.s` has `q_decPixF()`, which calculates the table's values instead
+  and needs no table: slower per pixel, but faster when the table would only
+  be used for one picture of up to a few hundred thousand pixels, see
+  [../bench](../bench/README.md#static-table-or-hash-formula).
 * Never reads beyond the end of the input nor writes beyond the end of the
   output, even for corrupt files. Returns -1 if the data doesn't decode into
   exactly the expected number of pixels.
@@ -33,8 +37,8 @@ On an emulated Falcon the asm decoder is 1.5-1.9 times and the asm encoder
 
 ## Assembling
 
-Devpac 3: assemble `q16dec.s` and `q16enc.s` to linkable object files. Both
-files can also be INCLUDEd into a program.
+Devpac 3: assemble `q16dec.s`, `q16decf.s` and `q16enc.s` to linkable object
+files. They can also be INCLUDEd into a program.
 
 vasm (`vasmm68k_mot`):
 

@@ -7,6 +7,7 @@
 *   each decode for at least two seconds:
 *
 *   Q16:  asm      - m68k/q16dec.s
+*         asmF     - m68k/q16decf.s (no static table)
 *         C        - q16_lib.c
 *   PNG:  libpng   - libpng + zlib, to 8-bit RGB(A)
 *         stb      - stb_image, to 8-bit RGB(A)
@@ -150,6 +151,18 @@ static int dec_q16_asm( void )
 	const unsigned char * p = g_file + sizeof(q16_fileheader);
 
 	if( q_decPix( (unsigned short*) g_out, p, p + g_pixelBytes, n, g_staticTable ) != 0 )
+		return -1;
+	if( g_alphaBytes && q_decAlp( g_alpha, p + g_pixelBytes, p + g_pixelBytes + g_alphaBytes, n ) != 0 )
+		return -1;
+	return 0;
+}
+
+static int dec_q16_asmF( void )
+{
+	unsigned long n = (unsigned long) g_q16w * g_q16h;
+	const unsigned char * p = g_file + sizeof(q16_fileheader);
+
+	if( q_decPixF( (unsigned short*) g_out, p, p + g_pixelBytes, n ) != 0 )
 		return -1;
 	if( g_alphaBytes && q_decAlp( g_alpha, p + g_pixelBytes, p + g_pixelBytes + g_alphaBytes, n ) != 0 )
 		return -1;
@@ -579,8 +592,10 @@ int main( void )
 	g_staticTable = malloc( 65536 );
 
 	t0 = clock();
-	q16_setupStaticTable( g_staticTable );
-	out( "q16_setupStaticTable: %ld ms\n\n", (long) (clock() - t0) * 1000 / CLOCKS_PER_SEC );
+	for( i = 0 ; i < 20 ; i++ )
+		q16_setupStaticTable( g_staticTable );
+	t0 = clock() - t0;
+	out( "q16_setupStaticTable: %ld.%02ld ms\n\n", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
 
 	out( "%-12s %8s  %-9s %9s\n", "File", "Bytes", "Decoder", "Time" );
 
@@ -627,6 +642,12 @@ int main( void )
 			{
 				report( name, "asm", time_decoder( dec_q16_asm ) );
 				sumAsm = checksum_q16();
+				report( name, "asmF", time_decoder( dec_q16_asmF ) );
+				if( checksum_q16() != sumAsm )
+				{
+					out( "  ERROR: asm and asmF decoders differ\n" );
+					g_errors++;
+				}
 				report( name, "C", time_decoder( dec_q16_c ) );
 				sumC = checksum_q16();
 				if( sumAsm != sumC )

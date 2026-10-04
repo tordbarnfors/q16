@@ -15,6 +15,13 @@
 *                    upsampling), directly to RGB565
 *         stb      - stb_image, to 8-bit RGB
 *
+*   For each PNG it also times encoding the decoded pixels with:
+*
+*   Q16:  asm      - m68k/q16enc.s
+*         C        - q16_lib.c
+*   PNG:  libpng   - libpng + zlib, default compression (level 6)
+*   JPEG: turbo    - libjpeg-turbo, quality 90 and 75 (not if alpha)
+*
 *   Results are printed and written to BENCH.TXT. Under Hatari the program
 *   quits the emulator when done (Native Features), on real hardware it
 *   waits for a key.
@@ -44,7 +51,7 @@
 #define STBI_NO_LINEAR
 #include "../stb_image.h"
 
-#include "../m68k/q16dec.h"
+#include "../m68k/q16enc.h"
 
 /* C version of the Q16 decoder (q16lib_c.c), with prefixed names. */
 
@@ -56,6 +63,11 @@ c_q16_result	c_q16_decompressPixels( unsigned short * pDest, const unsigned char
 void			c_q16_beginAlphaDecompression( unsigned char instanceTable[1] );
 c_q16_result	c_q16_decompressAlpha( unsigned char * pDest, const unsigned char * pBegin, const unsigned char * pEnd,
 									   unsigned char instanceTable[1] );
+
+void			c_q16_beginPixelCompression( unsigned short instanceTable[65] );
+unsigned char *	c_q16_compressPixels( unsigned char * pDest, const unsigned short * pBegin, const unsigned short * pEnd,
+									  unsigned short instanceTable[65], const unsigned char staticTable[65536] );
+unsigned char *	c_q16_compressAlpha( unsigned char * pDest, const unsigned char * pBegin, const unsigned char * pEnd );
 
 int nf_shutdown( void );		/* natfeats.s */
 
@@ -311,6 +323,165 @@ static int dec_turbo_common( int fast )
 static int dec_turbo( void )	{ return dec_turbo_common( 0 ); }
 static int dec_turbo565( void )	{ return dec_turbo_common( 1 ); }
 
+/*____ Encoders __________________________________________________________*/
+
+static void report_enc( const char * name, const char * encoder, long t, long bytes );
+static long time_decoder( int (*decode)(void) );
+static int g_errors;
+
+static unsigned short *	e_pixels;		/* RGB565 pixels to encode */
+static unsigned char *	e_alpha;		/* Alpha to encode, NULL if none */
+static unsigned char *	e_rgb;			/* 8-bit RGB for JPEG */
+static unsigned char *	e_buf;			/* Encoded data */
+static long				e_len;
+static int				e_quality;
+
+static int enc_q16_asm( void )
+{
+	unsigned long n = (unsigned long) g_width * g_height;
+	unsigned char * p = e_buf + sizeof(q16_fileheader);
+	unsigned char * pAlpha = q_encPix( p, e_pixels, e_pixels + n, g_staticTable );
+	unsigned char * pEnd = e_alpha ? q_encAlp( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
+	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
+	e_len = pEnd - e_buf;
+	return 0;
+}
+
+static int enc_q16_c( void )
+{
+	static unsigned short instance[65];
+	unsigned long n = (unsigned long) g_width * g_height;
+	unsigned char * p = e_buf + sizeof(q16_fileheader);
+	unsigned char * pAlpha, * pEnd;
+
+	c_q16_beginPixelCompression( instance );
+	pAlpha = c_q16_compressPixels( p, e_pixels, e_pixels + n, instance, g_staticTable );
+	pEnd = e_alpha ? c_q16_compressAlpha( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
+	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
+	e_len = pEnd - e_buf;
+	return 0;
+}
+
+static void png_memwrite( png_structp png, png_bytep data, png_size_t n )
+{
+	memcpy( e_buf + e_len, data, n );
+	e_len += n;
+	(void) png;
+}
+
+static void png_memflush( png_structp png ) { (void) png; }
+
+static int enc_libpng( void )
+{
+	static png_bytep rows[MAX_PIXELS / 64];
+	png_structp png = png_create_write_struct( PNG_LIBPNG_VER_STRING, NULL, NULL, NULL );
+	png_infop info = png_create_info_struct( png );
+	int y;
+
+	if( setjmp( png_jmpbuf(png) ) )
+	{
+		png_destroy_write_struct( &png, &info );
+		return -1;
+	}
+	e_len = 0;
+	png_set_write_fn( png, NULL, png_memwrite, png_memflush );
+	png_set_IHDR( png, info, g_width, g_height, 8, g_channels == 4 ? PNG_COLOR_TYPE_RGBA : PNG_COLOR_TYPE_RGB,
+				  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
+	png_write_info( png, info );
+	for( y = 0 ; y < g_height ; y++ )
+		rows[y] = g_out + (long) y * g_width * g_channels;
+	png_write_image( png, rows );
+	png_write_end( png, NULL );
+	png_destroy_write_struct( &png, &info );
+	return 0;
+}
+
+static int enc_turbo( void )
+{
+	struct jpeg_compress_struct cinfo;
+	struct jpeg_err jerr;
+	unsigned char * out = e_buf;
+	unsigned long outSize = MAX_PIXELS * 5;
+	JSAMPROW row;
+
+	cinfo.err = jpeg_std_error( &jerr.pub );
+	jerr.pub.error_exit = jpeg_err_exit;
+	if( setjmp( jerr.jb ) )
+	{
+		jpeg_destroy_compress( &cinfo );
+		return -1;
+	}
+	jpeg_create_compress( &cinfo );
+	jpeg_mem_dest( &cinfo, &out, &outSize );
+	cinfo.image_width = g_width;
+	cinfo.image_height = g_height;
+	cinfo.input_components = 3;
+	cinfo.in_color_space = JCS_RGB;
+	jpeg_set_defaults( &cinfo );
+	jpeg_set_quality( &cinfo, e_quality, TRUE );
+	jpeg_start_compress( &cinfo, TRUE );
+	while( cinfo.next_scanline < cinfo.image_height )
+	{
+		row = e_rgb + (long) cinfo.next_scanline * g_width * 3;
+		jpeg_write_scanlines( &cinfo, &row, 1 );
+	}
+	jpeg_finish_compress( &cinfo );
+	jpeg_destroy_compress( &cinfo );
+	e_len = outSize;
+	return 0;
+}
+
+/* Times the encoders on the pixels in g_out (as decoded by libpng). */
+
+static void encode_tests( const char * name )
+{
+	long n = (long) g_width * g_height, i;
+	unsigned char * asmCopy;
+	long asmLen, t;
+
+	e_pixels = malloc( n * 2 );
+	e_alpha = g_channels == 4 ? malloc( n ) : NULL;
+	e_rgb = malloc( n * 3 );
+	e_buf = malloc( MAX_PIXELS * 5 );
+	asmCopy = malloc( MAX_PIXELS * 3 );
+
+	for( i = 0 ; i < n ; i++ )
+	{
+		unsigned char * p = g_out + i * g_channels;
+		e_pixels[i] = ((p[0] & 0xF8) << 8) | ((p[1] & 0xFC) << 3) | (p[2] >> 3);
+		e_rgb[i*3] = p[0];
+		e_rgb[i*3+1] = p[1];
+		e_rgb[i*3+2] = p[2];
+		if( e_alpha )
+			e_alpha[i] = p[3];
+	}
+
+	t = time_decoder( enc_q16_asm );
+	report_enc( name, "enc asm", t, e_len );
+	asmLen = e_len;
+	memcpy( asmCopy, e_buf, e_len );
+	t = time_decoder( enc_q16_c );
+	report_enc( name, "enc C", t, e_len );
+	if( e_len != asmLen || memcmp( asmCopy, e_buf, e_len ) != 0 )
+	{
+		out( "  ERROR: asm and C encoders differ\n" );
+		g_errors++;
+	}
+	t = time_decoder( enc_libpng );
+	report_enc( name, "enc png", t, e_len );
+	if( !e_alpha )
+	{
+		e_quality = 90;
+		t = time_decoder( enc_turbo );
+		report_enc( name, "enc jpg90", t, e_len );
+		e_quality = 75;
+		t = time_decoder( enc_turbo );
+		report_enc( name, "enc jpg75", t, e_len );
+	}
+
+	free( e_pixels ); free( e_alpha ); free( e_rgb ); free( e_buf ); free( asmCopy );
+}
+
 /*____ Timing ____________________________________________________________*/
 
 /* Returns milliseconds * 100 per decode, or -1 on error. */
@@ -373,6 +544,18 @@ static void report( const char * name, const char * decoder, long t )
 	}
 	else
 		out( "%-12s %8ld  %-9s %6ld.%02ld ms  %4ld kpixels/s\n", name, g_size, decoder, t / 100, t % 100,
+			 (long) g_width * g_height * 100 / (t ? t : 1) );
+}
+
+static void report_enc( const char * name, const char * encoder, long t, long bytes )
+{
+	if( t < 0 )
+	{
+		out( "%-12s %8ld  %-9s   ERROR\n", name, bytes, encoder );
+		g_errors++;
+	}
+	else
+		out( "%-12s %8ld  %-9s %6ld.%02ld ms  %4ld kpixels/s\n", name, bytes, encoder, t / 100, t % 100,
 			 (long) g_width * g_height * 100 / (t ? t : 1) );
 }
 
@@ -471,6 +654,8 @@ int main( void )
 				out( "  ERROR: libpng and stb_image differ\n" );
 				g_errors++;
 			}
+			if( dec_libpng() == 0 )
+				encode_tests( name );
 		}
 		else
 		{

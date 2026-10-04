@@ -19,6 +19,6 @@ rm -f "$DIR/BENCH.TXT"
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy hatari --machine falcon --tos "$TOS" \
 	--cpulevel 3 --cpuclock 16 --cpu-exact yes --compatible yes --mmu no --fpu none --dsp none \
 	--memsize 14 --ttram 0 --monitor vga --natfeats yes --fast-forward yes --fast-boot yes --sound off \
-	--harddrive "$DIR" --auto 'C:\FALCBNCH.TOS' --confirm-quit no --run-vbls 500000 > "$DIR/hatari.log" 2>&1 || true
+	--harddrive "$DIR" --auto 'C:\FALCBNCH.TOS' --confirm-quit no --run-vbls 2000000 > "$DIR/hatari.log" 2>&1 || true
 
 tr -d '\r' < "$DIR/BENCH.TXT"

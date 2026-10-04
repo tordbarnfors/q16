@@ -12,10 +12,12 @@ from collections import OrderedDict
 
 d = sys.argv[1]
 times = {}                      # (file, decoder) -> ms
+sizes = {}                      # (file, decoder) -> bytes (encoded size for encoders)
 for line in open(os.path.join(d, "BENCH.TXT")):
-    m = re.match(r"(\S+)\s+(\d+)\s+(\S+)\s+([\d.]+) ms", line)
+    m = re.match(r"(\S+)\s+(\d+)\s+((?:enc )?\S+)\s+([\d.]+) ms", line)
     if m:
         times[(m.group(1), m.group(3))] = float(m.group(4))
+        sizes[(m.group(1), m.group(3))] = int(m.group(2))
 
 def size(name):
     p = os.path.join(d, name)
@@ -49,3 +51,11 @@ for n in names:
                                           ms(n + ".PNG", "libpng"), ms(n + ".PNG", "stb"),
                                           ms(n + "_90.JPG", "turbo"), ms(n + "_90.JPG", "turbo565"), ms(n + "_90.JPG", "stb"),
                                           ms(n + "_75.JPG", "turbo"), ms(n + "_75.JPG", "turbo565"), ms(n + "_75.JPG", "stb")])))
+
+if any(dec.startswith("enc ") for _, dec in times):
+    print("\n### Encoding time\n")
+    print("Encoding the pixels decoded from NAME.PNG (RGB565). JPEG encodes them as 8-bit RGB.\n")
+    print("| Image | Q16 asm | Q16 C | PNG libpng | JPEG q90 turbo | JPEG q75 turbo |")
+    print("|---|---|---|---|---|---|")
+    for n in names:
+        print("| %s | %s |" % (n, " | ".join(ms(n + ".PNG", "enc " + e) for e in ["asm", "C", "png", "jpg90", "jpg75"])))

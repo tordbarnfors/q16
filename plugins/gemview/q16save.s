@@ -91,20 +91,20 @@ q16_save:
 	move.l	SS_IMAGE(a5),a4			; a4 = Image
 	move.w	IMG_TYPE(a4),d0
 	cmp.w	#IBITMAP,d0
-	blo	qs_badtype
+	blo	.badtype
 	cmp.w	#IRGB,d0
-	bhi	qs_badtype
+	bhi	.badtype
 	moveq	#0,d7
 	move.w	IMG_UNALIGNWIDTH(a4),d7		; d7 = width (as shown)
-	bne.s	qs_width
+	bne.s	.width
 	move.w	IMG_WIDTH(a4),d7
-qs_width:
+.width:
 	moveq	#0,d6
 	move.w	IMG_HEIGHT(a4),d6		; d6 = height
 	tst.l	d7
-	beq	qs_badtype
+	beq	.badtype
 	tst.l	d6
-	beq	qs_badtype
+	beq	.badtype
 
 	lea	msg_saving(pc),a0
 	bsr	qs_print
@@ -115,11 +115,11 @@ qs_width:
 	add.l	d0,d0
 	bsr	qs_malloc
 	move.l	a0,pixels
-	beq	qs_nomem
+	beq	.nomem
 	move.l	#65536,d0
 	bsr	qs_malloc
 	move.l	a0,table
-	beq	qs_nomem
+	beq	.nomem
 	move.l	d5,d0				; Header + Q16_MAX_PIXEL_BYTES
 	add.l	d0,d0
 	move.l	d5,d1
@@ -128,7 +128,7 @@ qs_width:
 	add.l	#20+1,d0
 	bsr	qs_malloc
 	move.l	a0,out
-	beq	qs_nomem
+	beq	.nomem
 
 	; Convert to RGB565. Lines are padded to 16 pixels in all types.
 
@@ -140,11 +140,11 @@ qs_width:
 	add.l	#15,d4
 	and.w	#$FFF0,d4			; d4 = padded width
 	cmp.w	#ITRUEC,IMG_TYPE(a4)
-	beq	qs_truecolor
+	beq	.truecolor
 	bsr	qs_palette
 	lea	lut,a6				; a6 = palette as RGB565
 	cmp.w	#IRGB,IMG_TYPE(a4)
-	beq.s	qs_chunky
+	beq.s	.chunky
 
 	; Bitplanes, one plane after the other: bit p of a pixel's colour is
 	; in plane p.
@@ -155,16 +155,16 @@ qs_width:
 	move.l	d0,planesize
 	moveq	#0,d1
 	move.w	IMG_DEPTH(a4),d1
-	beq	qs_badtype
+	beq	.badtype
 	cmp.w	#8,d1
-	bhi	qs_badtype
+	bhi	.badtype
 	subq.w	#1,d1
 	move.w	d1,depth			; depth = planes - 1
 	mulu.l	d1,d0
 	move.l	d0,lastplane			; Offset of the last plane
-qs_planarline:
+.planarline:
 	moveq	#0,d2				; d2 = x
-qs_planarpixel:
+.planarpixel:
 	move.l	d2,d0
 	lsr.l	#3,d0
 	lea	(a2,d0.l),a0
@@ -174,43 +174,43 @@ qs_planarpixel:
 	and.w	#7,d1				; Bit, 7 = leftmost pixel
 	moveq	#0,d0				; d0 = colour
 	move.w	depth,d5
-qs_planarbit:
+.planarbit:
 	add.w	d0,d0
 	btst	d1,(a0)
-	beq.s	qs_planarzero
+	beq.s	.planarzero
 	addq.w	#1,d0
-qs_planarzero:
+.planarzero:
 	sub.l	planesize,a0
-	dbra	d5,qs_planarbit
+	dbra	d5,.planarbit
 	move.w	(a6,d0.w*2),(a1)+
 	addq.l	#1,d2
 	cmp.l	d7,d2
-	blo.s	qs_planarpixel
+	blo.s	.planarpixel
 	add.l	d4,a2
-	dbra	d3,qs_planarline
-	bra.s	qs_converted
+	dbra	d3,.planarline
+	bra.s	.converted
 
-qs_chunky:					; One byte per pixel
+.chunky:					; One byte per pixel
 	moveq	#0,d0
-qs_chunkyline:
+.chunkyline:
 	move.l	a2,a0
 	move.l	d7,d2
 	subq.l	#1,d2
-qs_chunkypixel:
+.chunkypixel:
 	move.b	(a0)+,d0
 	move.w	(a6,d0.w*2),(a1)+
-	dbra	d2,qs_chunkypixel
+	dbra	d2,.chunkypixel
 	add.l	d4,a2
-	dbra	d3,qs_chunkyline
-	bra.s	qs_converted
+	dbra	d3,.chunkyline
+	bra.s	.converted
 
-qs_truecolor:					; Red, green, blue
+.truecolor:					; Red, green, blue
 	mulu.l	#3,d4				; d4 = bytes per line
-qs_line:
+.line:
 	move.l	a2,a0
 	move.l	d7,d2
 	subq.l	#1,d2
-qs_pixel:
+.pixel:
 	move.b	(a0)+,d0			; Red
 	lsl.w	#8,d0
 	and.w	#$F800,d0
@@ -224,11 +224,11 @@ qs_pixel:
 	lsr.w	#3,d1
 	or.w	d1,d0
 	move.w	d0,(a1)+
-	dbra	d2,qs_pixel
+	dbra	d2,.pixel
 	add.l	d4,a2
-	dbra	d3,qs_line
+	dbra	d3,.line
 
-qs_converted:
+.converted:
 	move.l	d7,d5
 	mulu.l	d6,d5				; d5 = number of pixels
 
@@ -269,43 +269,43 @@ qs_converted:
 	move.l	SS_OPEN(a5),a2
 	jsr	(a2)
 	move.w	d0,d4				; d4 = handle
-	ble.s	qs_writeerror
+	ble.s	.writeerror
 	move.w	d4,d0
 	move.l	d3,d1
 	move.l	out,a0
 	move.l	SS_WRITE(a5),a2
 	jsr	(a2)
 	cmp.l	d3,d0
-	bne.s	qs_closedelete
+	bne.s	.closedelete
 	move.w	d4,d0
 	move.l	SS_CLOSE(a5),a2
 	jsr	(a2)
 	tst.w	d0
-	bne.s	qs_delete
+	bne.s	.delete
 
 	lea	msg_done(pc),a0
 	bsr.s	qs_print
 	bsr.s	qs_cleanup
 	moveq	#1,d0
-	bra.s	qs_return
+	bra.s	.return
 
-qs_closedelete:
+.closedelete:
 	move.w	d4,d0
 	move.l	SS_CLOSE(a5),a2
 	jsr	(a2)
-qs_delete:
+.delete:
 	move.l	SS_FILENAME(a5),a0
 	move.l	SS_DELETE(a5),a2
 	jsr	(a2)
-qs_writeerror:
+.writeerror:
 	lea	alert_write(pc),a0
-	bra.s	qs_error
-qs_nomem:
+	bra.s	.error
+.nomem:
 	lea	alert_memory(pc),a0
-	bra.s	qs_error
-qs_badtype:
+	bra.s	.error
+.badtype:
 	lea	alert_type(pc),a0
-qs_error:
+.error:
 	moveq	#1,d0
 	move.l	SS_ALERT(a5),a2
 	jsr	(a2)
@@ -313,7 +313,7 @@ qs_error:
 	bsr.s	qs_print
 	bsr.s	qs_cleanup
 	moveq	#0,d0
-qs_return:
+.return:
 	movem.l	(sp)+,d3-d7/a2-a6
 	rts
 
@@ -334,16 +334,16 @@ qs_print:
 qs_cleanup:
 	lea	pixels,a3
 	moveq	#2,d3				; pixels, table, out
-qs_cleanuploop:
+.loop:
 	move.l	(a3),d0
-	beq.s	qs_cleanupnext
+	beq.s	.next
 	clr.l	(a3)
 	move.l	d0,a0
 	move.l	SS_FREE(a5),a2
 	jsr	(a2)
-qs_cleanupnext:
+.next:
 	addq.l	#4,a3
-	dbra	d3,qs_cleanuploop
+	dbra	d3,.loop
 	rts
 
 ;	Converts the picture's palette to RGB565 in lut. Monochrome pictures
@@ -353,30 +353,30 @@ qs_palette:
 	movem.l	a1-a3,-(sp)
 	lea	lut,a0
 	moveq	#127,d0				; Clear all 256 entries.
-qs_palclear:
+.clear:
 	clr.l	(a0)+
-	dbra	d0,qs_palclear
+	dbra	d0,.clear
 	lea	lut,a0
 	cmp.w	#IBITMAP,IMG_TYPE(a4)
-	bne.s	qs_palcolor
+	bne.s	.color
 	move.w	#$FFFF,(a0)
-	bra.s	qs_paldone
-qs_palcolor:
+	bra.s	.done
+.color:
 	moveq	#0,d2
 	move.w	IMG_RGBUSED(a4),d2		; Colours used
-	bne.s	qs_palused
+	bne.s	.used
 	move.w	IMG_RGBSIZE(a4),d2
-qs_palused:
+.used:
 	cmp.w	#256,d2
-	bls.s	qs_palcount
+	bls.s	.count
 	move.w	#256,d2
-qs_palcount:
+.count:
 	subq.w	#1,d2
-	bmi.s	qs_paldone
+	bmi.s	.done
 	move.l	IMG_RED(a4),a1
 	move.l	IMG_GREEN(a4),a2
 	move.l	IMG_BLUE(a4),a3
-qs_palentry:
+.entry:
 	move.w	(a1)+,d0			; Intensities are 0-65535.
 	and.w	#$F800,d0
 	move.w	(a2)+,d1
@@ -388,8 +388,8 @@ qs_palentry:
 	lsr.w	#3,d1
 	or.w	d1,d0
 	move.w	d0,(a0)+
-	dbra	d2,qs_palentry
-qs_paldone:
+	dbra	d2,.entry
+.done:
 	movem.l	(sp)+,a1-a3
 	rts
 

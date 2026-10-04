@@ -1,12 +1,23 @@
-; Shower 1.1 by Blade of New Core (Tord Jansson), 1995.
-; Disassembled from SHOWER.TTP with rg-dis 0.9.40 (Reservoir Gods),
-; dialect devpac3. Re-assembles to a byte-identical SHOWER.TTP.
+; Shower 1.2 - picture viewer for the Atari Falcon.
+;
+; Shower 1.1 by Blade of New Core (Tord Jansson), 1995, was disassembled
+; from SHOWER.TTP with rg-dis 0.9.40 (Reservoir Gods) in Devpac 3 dialect,
+; since its source code was lost. Version 1.2 (2026) adds Q16 support and
+; fixes bugs in the Targa, GIF and BMP loaders, see SHOWER.TXT.
+;
+; The labels and comments were added after the disassembly. Labels starting
+; with a dot are local to the function they're in. The disassembly gave
+; 1.1 text: 9048 bytes, data: 3916 bytes, bss: 23768 bytes.
 	OPT	D-,X-
-; input: SHOWER.TTP
-; text: 9048 bytes  data: 3916 bytes  bss: 23768 bytes
 	OPT	P=68020
 	SECTION TEXT
-	MOVE.L	#STR_THE_SHOWER_PICTURE_V,-(A7)	; str - string pointer → STR_THE_SHOWER_PICTURE_V
+
+;	Program start. Prints the title, loads the picture named on the command
+;	line, saves the video mode and looks up the picture's extension in
+;	format_table.
+
+start:
+	MOVE.L	#title_text,-(A7)	; str - string pointer → title_text
 	MOVE.W	#9,-(A7)			; Cconws - write a NUL-terminated string to the console
 	TRAP	#1				; GEMDOS #9 (Cconws)
 	ADDQ.L	#6,A7
@@ -16,13 +27,13 @@
 	MOVE.B	$80(A0),D0			; basepage.p_cmdlin (command line length)
 	LEA	$81(A0),A0
 	CLR.B	(A0,D0.W)
-_L0020:
+.skip_spaces:
 	CMPI.B	#32,(A0)
-	BNE.S	_L002A
-	ADDQ.L	#1,A0				; align stack to even address
-	BRA.S	_L0020
-_L002A:
-	MOVE.L	A0,(SAVED_BASEPAGE).L		; save basepage pointer
+	BNE.S	.cmdline_ok
+	ADDQ.L	#1,A0
+	BRA.S	.skip_spaces
+.cmdline_ok:
+	MOVE.L	A0,(cmdline).L		; Picture file name
 	MOVEA.L	4(A7),A5			; TOS basepage pointer from stack
 	MOVE.L	$C(A5),D0			; basepage.p_tlen (text segment size)
 	ADD.L	$14(A5),D0			; + basepage.p_dlen (data segment size)
@@ -40,69 +51,69 @@ _L002A:
 	TRAP	#1				; GEMDOS #74 (Mshrink)
 	LEA	$C(A7),A7			; restore stack frame
 
-	MOVE.L	#_B36F2,-(A7)			; dta - DTA buffer pointer → _B36F2
+	MOVE.L	#dta,-(A7)			; dta - DTA buffer pointer → dta
 	MOVE.W	#26,-(A7)			; Fsetdta - set the disk transfer address
 	TRAP	#1				; GEMDOS #26 (Fsetdta)
 	ADDQ.L	#6,A7
 
 	MOVE.W	#7,-(A7)			; attr - attributes to match: read-only|hidden|system
-	MOVE.L	(SAVED_BASEPAGE).L,-(A7)	; fspec - search path pointer, wildcards allowed
+	MOVE.L	(cmdline).L,-(A7)	; fspec - search path pointer, wildcards allowed
 	MOVE.W	#78,-(A7)			; Fsfirst - find the first matching file
 	TRAP	#1				; GEMDOS #78 (Fsfirst)
 	ADDQ.L	#8,A7
 	TST.W	D0
 
-	BNE.W	_L01E0
-	LEA	_B36F2(PC),A0
-	MOVE.L	$1A(A0),(_B32C4).L
-	LEA	$2C(A0),A0			; basepage.p_env (environment string pointer)
-_L0098:
+	BNE.W	exit
+	LEA	dta(PC),A0
+	MOVE.L	$1A(A0),(file_size).L	; File size from the DTA
+	LEA	$2C(A0),A0			; End of the file name in the DTA
+.find_extension:
 	SUBQ.L	#1,A0
 	CMPI.B	#46,(A0)
-	BNE.S	_L0098
-	MOVE.L	(A0),(_B32C8).L
+	BNE.S	.find_extension
+	MOVE.L	(A0),(file_extension).L
 
-	MOVE.L	(_B32C4).L,-(A7)		; number - bytes to allocate
+	MOVE.L	(file_size).L,-(A7)		; number - bytes to allocate
 	MOVE.W	#72,-(A7)			; Malloc - allocate memory
 	TRAP	#1				; GEMDOS #72 (Malloc)
 	ADDQ.L	#6,A7
 
-	BEQ.W	_L01E0
-	MOVE.L	D0,(_D2BEA).L
+	BEQ.W	exit
+	MOVE.L	D0,(file_buffer).L
 
 	MOVE.W	#0,-(A7)			; mode - access mode: read-only
-	MOVE.L	(SAVED_BASEPAGE).L,-(A7)	; fname - file name pointer
+	MOVE.L	(cmdline).L,-(A7)	; fname - file name pointer
 	MOVE.W	#61,-(A7)			; Fopen - open an existing file
 	TRAP	#1				; GEMDOS #61 (Fopen)
 	ADDQ.L	#8,A7
 	TST.W	D0
 
-	BMI.W	_L01E0
-	MOVE.W	D0,(_B32C2).L			; store handle - file handle, or negative error code
+	BMI.W	exit
+	MOVE.W	D0,(file_handle).L			; store handle - file handle, or negative error code
 
-	MOVE.L	_D2BEA(PC),-(A7)		; buf - transfer buffer pointer
-	MOVE.L	_B32C4(PC),-(A7)		; count - byte count
-	MOVE.W	_B32C2(PC),-(A7)		; handle - file handle
+	MOVE.L	file_buffer(PC),-(A7)		; buf - transfer buffer pointer
+	MOVE.L	file_size(PC),-(A7)		; count - byte count
+	MOVE.W	file_handle(PC),-(A7)		; handle - file handle
 	MOVE.W	#63,-(A7)			; Fread - read from a file handle
 	TRAP	#1				; GEMDOS #63 (Fread)
 	LEA	$C(A7),A7
 
-	MOVE.W	(_B32C2).L,-(A7)		; handle - file handle
+	MOVE.W	(file_handle).L,-(A7)		; handle - file handle
 	MOVE.W	#62,-(A7)			; Fclose - close a file handle
 	TRAP	#1				; GEMDOS #62 (Fclose)
 	ADDQ.L	#4,A7
 	TST.W	D0
 
-	BMI.W	_L01E0
+	BMI.W	exit
 
-	MOVE.L	#0,-(A7)			; stack: enter supervisor mode - 0 enters supervisor mode…
+	MOVE.L	#0,-(A7)			; stack - 0 = use the user stack
 	MOVE.W	#32,-(A7)			; Super - enter or query supervisor mode
 	TRAP	#1				; GEMDOS #32 (Super)
 	ADDQ.L	#6,A7
 
-	MOVE.W	($FFFF8264).W,(OLD_HSCROLL_NOPREFETCH).L	; store hscroll_noprefetch [STE/Falcon]
-	MOVE.W	($FFFF820E).W,(OLD_VID_LINEOFFSET).L	; store vid_lineoffset [Falcon]
-	BSR.W	_L0782
+	MOVE.W	($FFFF8264).W,(old_hscroll).L	; store hscroll_noprefetch [STE/Falcon]
+	MOVE.W	($FFFF820E).W,(old_line_offset).L	; store vid_lineoffset [Falcon]
+	BSR.W	save_video
 
 	MOVE.W	#$FFFF,-(A7)			; modecode - video mode code
 	MOVE.W	#88,-(A7)			; Vsetmode - select a Falcon video mode
@@ -110,119 +121,128 @@ _L0098:
 	ADDQ.L	#4,A7
 	BTST.L	#7,D0
 
-	BEQ.S	_L0140
-	CLR.W	(_D2358).L
-_L0140:
+	BEQ.S	.not_st_compatible
+	CLR.W	(skip_shiftmode).L
+.not_st_compatible:
 	MOVE.W	D0,D1
 	ANDI.W	#7,D1
 	CMP.W	#1,D1
-	BNE.S	_L0152
-	CLR.W	(_D2358).L
-_L0152:
+	BNE.S	.not_2_planes
+	CLR.W	(skip_shiftmode).L
+.not_2_planes:
 	MOVE.W	D0,D1
 	ANDI.W	#$87,D1
 	CMP.W	#$80,D1
-	BNE.S	_L0166
-	MOVE.W	#1,(_D2358).L
-_L0166:
+	BNE.S	.check_monitor
+	MOVE.W	#1,(skip_shiftmode).L
+.check_monitor:
 	BTST.L	#4,D0
-	BEQ.S	_L0180
-	MOVE.W	#$FFFF,(_D26BE).L
-	MOVE.L	#_D270A,(_B32B8).L
-	BRA.S	_L01A4
-_L0180:
+	BEQ.S	.not_vga
+	MOVE.W	#$FFFF,(monitor).L
+	MOVE.L	#video_vga,(video_table).L
+	BRA.S	.save_physbase
+.not_vga:
 	BTST.L	#5,D0
-	BNE.S	_L019A
-	MOVE.W	#1,(_D26BE).L
-	MOVE.L	#_D2A3A,(_B32B8).L
-	BRA.S	_L01A4
-_L019A:
-	MOVE.L	#_D288A,(_B32B8).L
+	BNE.S	.pal
+	MOVE.W	#1,(monitor).L
+	MOVE.L	#video_ntsc,(video_table).L
+	BRA.S	.save_physbase
+.pal:
+	MOVE.L	#video_pal,(video_table).L
 
-_L01A4:
+.save_physbase:
 	MOVE.W	#2,-(A7)			; Physbase - physical screen base address
 	TRAP	#14				; XBIOS #2 (Physbase)
 	ADDQ.L	#2,A7
-	MOVE.L	D0,(SAVED_PHYSBASE).L		; store physbase - physical screen base address
+	MOVE.L	D0,(old_physbase).L		; store physbase - physical screen base address
 
-	LEA	_D237A(PC),A0
-	MOVE.L	_B32C8(PC),D0
+	LEA	format_table-32(PC),A0		; The loop starts by adding 32.
+	MOVE.L	file_extension(PC),D0
 	ANDI.L	#$FFDFDFDF,D0
-_L01C0:
+.find_format:
 	LEA	$20(A0),A0
 	MOVE.L	(A0),D1
-	BEQ.S	_L01E0
+	BEQ.S	exit
 	ANDI.L	#$FFDFDFDF,D1
 	CMP.L	D0,D1
-	BNE.S	_L01C0
-	MOVE.L	A0,(_B32CC).L
+	BNE.S	.find_format
+	MOVE.L	A0,(format).L
 	TST.W	4(A0)
-	BEQ.W	_L0256
-_L01E0:
-	TST.L	(_D2BEA).L
-	BEQ.S	_L01F6
+	BEQ.W	setup_screen
 
-	MOVE.L	(_D2BEA).L,-(A7)		; block - address of the block to free
+;	Frees the memory, restores the screen and the video mode and terminates.
+;	Also the error exit: loaders jump here when a picture can't be shown.
+
+exit:
+	TST.L	(file_buffer).L
+	BEQ.S	.free_screen
+
+	MOVE.L	(file_buffer).L,-(A7)		; block - address of the block to free
 	MOVE.W	#73,-(A7)			; Mfree - free memory
 	TRAP	#1				; GEMDOS #73 (Mfree)
 	ADDQ.L	#6,A7
 
-_L01F6:
-	TST.L	(_B36E4).L
-	BEQ.S	_L020C
+.free_screen:
+	TST.L	(screen_block).L
+	BEQ.S	.restore_screen
 
-	MOVE.L	(_B36E4).L,-(A7)		; block - address of the block to free
+	MOVE.L	(screen_block).L,-(A7)		; block - address of the block to free
 	MOVE.W	#73,-(A7)			; Mfree - free memory
 	TRAP	#1				; GEMDOS #73 (Mfree)
 	ADDQ.L	#6,A7
 
-_L020C:
-	TST.L	(SAVED_PHYSBASE).L
-	BEQ.S	_L022C
-	MOVE.B	(_B32DD).L,($FFFF8201).W	; write vidbase_hi
-	MOVE.B	(_B32DE).L,($FFFF8203).W	; write vidbase_mid
-	MOVE.B	(_B32DF).L,($FFFF820D).W	; write vidbase_lo [STE+]
-_L022C:
-	TST.W	(_D26BC).L
-	BEQ.S	_L0252
-	LEA	_B371E(PC),A6
-	BSR.W	_L07B8
-	MOVE.W	OLD_HSCROLL_NOPREFETCH(PC),($FFFF8264).W	; write hscroll_noprefetch [STE/Falcon]
-	MOVE.W	OLD_VID_LINEOFFSET(PC),($FFFF820E).W	; write vid_lineoffset [Falcon]
-	MOVEA.L	_B32D8(PC),A0
-	MOVE.L	_B32D4(PC),$10(A0)
+.restore_screen:
+	TST.L	(old_physbase).L
+	BEQ.S	.restore_video
+	MOVE.B	(old_physbase+1).L,($FFFF8201).W	; write vidbase_hi
+	MOVE.B	(old_physbase+2).L,($FFFF8203).W	; write vidbase_mid
+	MOVE.B	(old_physbase+3).L,($FFFF820D).W	; write vidbase_lo [STE+]
+.restore_video:
+	TST.W	(video_saved).L
+	BEQ.S	.terminate
+	LEA	old_video(PC),A6
+	BSR.W	restore_video
+	MOVE.W	old_hscroll(PC),($FFFF8264).W	; write hscroll_noprefetch [STE/Falcon]
+	MOVE.W	old_line_offset(PC),($FFFF820E).W	; write vid_lineoffset [Falcon]
+	MOVEA.L	kbdvecs(PC),A0
+	MOVE.L	old_mousevec(PC),$10(A0)
 
-_L0252:
+.terminate:
 	CLR.W	-(A7)				; Pterm0 - terminate with exit code 0
 	TRAP	#1				; GEMDOS #0 (Pterm0)
 
-_L0256:
+;	Sets up a screen of at least 640 x 480 pixels for the picture (A0 = format
+;	table entry), saves the palette, loads the picture, sets the video mode and
+;	palette and runs the main loop, which reads the keyboard and mouse until
+;	the user quits.
+
+setup_screen:
 	MOVEQ	#0,D0
 	MOVEQ	#0,D1
 	MOVEQ	#0,D2
 	MOVE.W	6(A0),D0
-	BMI.W	_L052E
+	BMI.W	query_header
 	MOVE.W	8(A0),D1
-	BMI.W	_L052E
+	BMI.W	query_header
 	MOVE.W	$A(A0),D2
-	BMI.W	_L052E
-	BEQ.W	_L01E0
+	BMI.W	query_header
+	BEQ.W	exit
 	CMP.W	#$280,D0
-	BGE.S	_L0282
+	BGE.S	.width_ok
 	MOVE.W	#$280,D0
-_L0282:
+.width_ok:
 	CMP.W	#$1E0,D1
-	BGE.S	_L028C
+	BGE.S	.height_ok
 	MOVE.W	#$1E0,D1
-_L028C:
-	MOVE.W	D0,(_B36E8).L
-	MOVE.W	D1,(_B36EA).L
-	MOVE.W	D2,(_B36EC).L
+.height_ok:
+	MOVE.W	D0,(screen_width).L
+	MOVE.W	D1,(screen_height).L
+	MOVE.W	D2,(screen_planes).L
 	MULU.W	D1,D0
 	MULU.L	D2,D0
 	LSR.L	#3,D0
 	ADDQ.L	#4,D0
-	MOVE.L	D0,(_B36E0).L
+	MOVE.L	D0,(screen_size).L
 
 	MOVE.L	D0,-(A7)			; number - bytes to allocate
 	MOVE.W	#72,-(A7)			; Malloc - allocate memory
@@ -230,67 +250,67 @@ _L028C:
 	ADDQ.L	#6,A7
 	TST.L	D0
 
-	BEQ.W	_L01E0
-	MOVE.L	D0,(_B36E4).L
+	BEQ.W	exit
+	MOVE.L	D0,(screen_block).L
 	ADDQ.L	#4,D0
 	ANDI.L	#-4,D0
-	MOVE.L	D0,(_D2BEE).L
-	MOVEA.L	_B32CC(PC),A0
+	MOVE.L	D0,(screen).L
+	MOVEA.L	format(PC),A0
 	CMPI.W	#2,$A(A0)
-	BEQ.S	_L0304
+	BEQ.S	.save_st_palette
 	CMPI.W	#16,$A(A0)
-	BEQ.S	_L0312
+	BEQ.S	.load_picture
 
 	MOVE.W	#37,-(A7)			; Vsync - wait for the next vertical blank
 	TRAP	#14				; XBIOS #37 (Vsync)
 	ADDQ.L	#2,A7
 
-	LEA	PALETTE1(PC),A0
+	LEA	old_palette(PC),A0
 	LEA	($FFFF9800).W,A1		; videl_palette[0] [Falcon]
 	MOVE.L	#$FF,D0
-_L02FC:
+.save_falcon_palette:
 	MOVE.L	(A1)+,(A0)+
-	DBRA	D0,_L02FC
-	BRA.S	_L0312
-_L0304:
+	DBRA	D0,.save_falcon_palette
+	BRA.S	.load_picture
+.save_st_palette:
 	MOVEM.L	($FFFF8240).W,D0-D7		; read palette[0..15]
-	MOVEM.L	D0-D7,(PALETTE1).L
-_L0312:
-	MOVEA.L	_B32CC(PC),A0
+	MOVEM.L	D0-D7,(old_palette).L
+.load_picture:
+	MOVEA.L	format(PC),A0
 	MOVEA.L	$C(A0),A0
 	JSR	(A0)
-	BSR.W	_L0B38
-	MOVE.W	_B32A6(PC),(_B32A4).L
-	BSR.W	_L0B84
+	BSR.W	find_border_colours
+	MOVE.W	darkest_colour(PC),(border_colour).L
+	BSR.W	fill_border
 
 	MOVE.W	#37,-(A7)			; Vsync - wait for the next vertical blank
 	TRAP	#14				; XBIOS #37 (Vsync)
 	ADDQ.L	#2,A7
 
-	MOVE.B	(_D2BEF).L,($FFFF8201).W	; write vidbase_hi
-	MOVE.B	(_D2BF0).L,($FFFF8203).W	; write vidbase_mid
-	MOVE.B	(_D2BF1).L,($FFFF820D).W	; write vidbase_lo [STE+]
-	BSR.W	_L069A
-	MOVEA.L	_B32CC(PC),A0
+	MOVE.B	(screen+1).L,($FFFF8201).W	; write vidbase_hi
+	MOVE.B	(screen+2).L,($FFFF8203).W	; write vidbase_mid
+	MOVE.B	(screen+3).L,($FFFF820D).W	; write vidbase_lo [STE+]
+	BSR.W	zoom_out
+	MOVEA.L	format(PC),A0
 	CMPI.W	#2,$A(A0)
-	BEQ.S	_L037E
+	BEQ.S	.set_st_palette
 	CMPI.W	#16,$A(A0)
-	BEQ.S	_L03D4
-	LEA	PALETTE0(PC),A0
+	BEQ.S	.install_handlers
+	LEA	palette(PC),A0
 	LEA	($FFFF9800).W,A1		; videl_palette[0] [Falcon]
 	MOVEQ	#1,D0
-	MOVE.W	_B36EC(PC),D1
+	MOVE.W	screen_planes(PC),D1
 	LSL.W	D1,D0
 	SUBQ.W	#1,D0
-_L0376:
+.set_falcon_palette:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L0376
-	BRA.S	_L03D4
-_L037E:
-	LEA	PALETTE0(PC),A0
+	DBRA	D0,.set_falcon_palette
+	BRA.S	.install_handlers
+.set_st_palette:
+	LEA	palette(PC),A0
 	LEA	($FFFF8240).W,A1		; palette[0]
 	MOVEQ	#3,D0
-_L0388:
+.st_colour:
 	MOVEQ	#0,D3
 	MOVEQ	#0,D1
 	MOVE.B	(A0)+,D1
@@ -321,150 +341,157 @@ _L0388:
 	LSR.W	#1,D1
 	OR.W	D1,D3
 	MOVE.W	D3,(A1)+
-	DBRA	D0,_L0388
+	DBRA	D0,.st_colour
 
-_L03D4:
+.install_handlers:
 	MOVE.W	#34,-(A7)			; Kbdvbase - address of the IKBD vector table
 	TRAP	#14				; XBIOS #34 (Kbdvbase)
 	ADDQ.L	#2,A7
 	MOVEA.L	D0,A0
 
-	MOVE.L	$10(A0),(_B32D4).L
-	MOVE.L	A0,(_B32D8).L
-	MOVE.L	#_L0B16,$10(A0)
-	MOVE.L	($70).W,(OLD_VBL).L		; store vbl (vector)
-	MOVE.L	#VBL_HANDLER,($70).W		; set vbl.handler = $000109FA
-_L0404:
-	CMPI.B	#249,(_B32BD).L
-	BEQ.W	_L04EA
-	CMPI.B	#250,(_B32BD).L
-	BNE.S	_L0428
-_L041A:
-	CMPI.B	#250,(_B32BD).L
-	BEQ.S	_L041A
-	BSR.W	_L05B4
+	MOVE.L	$10(A0),(old_mousevec).L
+	MOVE.L	A0,(kbdvecs).L
+	MOVE.L	#mouse_handler,$10(A0)
+	MOVE.L	($70).W,(old_vbl).L		; store vbl (vector)
+	MOVE.L	#vbl_handler,($70).W		; set vbl.handler
+.main_loop:
+	CMPI.B	#249,(mouse_buttons).L	; Right button
+	BEQ.W	.quit
+	CMPI.B	#250,(mouse_buttons).L	; Left button
+	BNE.S	.check_key
+.wait_release:
+	CMPI.B	#250,(mouse_buttons).L
+	BEQ.S	.wait_release
+	BSR.W	toggle_zoom
 
-_L0428:
+.check_key:
 	MOVE.W	#11,-(A7)			; Cconis - console input status
 	TRAP	#1				; GEMDOS #11 (Cconis)
 	ADDQ.L	#2,A7
 	TST.W	D0
 
-	BEQ.S	_L0404
+	BEQ.S	.main_loop
 
 	MOVE.W	#7,-(A7)			; Crawcin - raw console input, no echo
 	TRAP	#1				; GEMDOS #7 (Crawcin)
 	ADDQ.L	#2,A7
 
-	SWAP	D0
-	CMP.B	#78,D0
-	BNE.S	_L044A
-	BSR.W	_L05C2
-	BRA.S	_L0404
-_L044A:
-	CMP.B	#74,D0
-	BNE.S	_L0456
-	BSR.W	_L069A
-	BRA.S	_L0404
-_L0456:
-	CMP.B	#72,D0
-	BNE.S	_L0462
-	BSR.W	_L075A
-	BRA.S	_L0404
-_L0462:
-	CMP.B	#75,D0
-	BNE.S	_L046E
-	BSR.W	_L076E
-	BRA.S	_L0404
-_L046E:
-	CMP.B	#77,D0
-	BNE.S	_L047A
-	BSR.W	_L0778
-	BRA.S	_L0404
-_L047A:
-	CMP.B	#80,D0
-	BNE.S	_L0488
-	BSR.W	_L0764
-	BRA.W	_L0404
-_L0488:
-	CMP.B	#59,D0
-	BNE.S	_L0496
-	BSR.W	_L0542
-	BRA.W	_L0404
-_L0496:
-	CMP.B	#68,D0
-	BNE.S	_L04C0
+	SWAP	D0				; Scan code
+	CMP.B	#78,D0			; Keypad +
+	BNE.S	.not_plus
+	BSR.W	zoom_in
+	BRA.S	.main_loop
+.not_plus:
+	CMP.B	#74,D0			; Keypad -
+	BNE.S	.not_minus
+	BSR.W	zoom_out
+	BRA.S	.main_loop
+.not_minus:
+	CMP.B	#72,D0			; Up
+	BNE.S	.not_up
+	BSR.W	scroll_up
+	BRA.S	.main_loop
+.not_up:
+	CMP.B	#75,D0			; Left
+	BNE.S	.not_left
+	BSR.W	scroll_left
+	BRA.S	.main_loop
+.not_left:
+	CMP.B	#77,D0			; Right
+	BNE.S	.not_right
+	BSR.W	scroll_right
+	BRA.S	.main_loop
+.not_right:
+	CMP.B	#80,D0			; Down
+	BNE.S	.not_down
+	BSR.W	scroll_down
+	BRA.W	.main_loop
+.not_down:
+	CMP.B	#59,D0			; F1
+	BNE.S	.not_f1
+	BSR.W	toggle_greyscale
+	BRA.W	.main_loop
+.not_f1:
+	CMP.B	#68,D0			; F10
+	BNE.S	.not_f10
 
 	MOVE.W	#$FFFF,-(A7)			; mode: query, do not set - new shift state, or -1 to que…
 	MOVE.W	#11,-(A7)			; Kbshift - read or set the keyboard shift state
 	TRAP	#13				; BIOS #11 (Kbshift)
 	ADDQ.L	#4,A7
-	BTST.L	#2,D0
+	BTST.L	#2,D0				; Control
 
-	BEQ.W	_L0404
-	BTST.L	#3,D0
-	BEQ.W	_L0404
-	BSR.W	_L0854
-	BRA.W	_L0404
-_L04C0:
-	CMP.B	#60,D0
-	BNE.S	_L04CE
-	BSR.W	_L059A
-	BRA.W	_L0404
-_L04CE:
-	CMP.B	#57,D0
-	BNE.S	_L04D6
-	BRA.S	_L04EA
-_L04D6:
-	CMP.B	#1,D0
-	BNE.S	_L04DE
-	BRA.S	_L04EA
-_L04DE:
-	CMP.B	#114,D0
-	BNE.S	_L04E6
-	BRA.S	_L04EA
-_L04E6:
-	BRA.W	_L0404
-_L04EA:
-	MOVE.L	OLD_VBL(PC),($70).W		; write vbl (vector)
-	MOVEA.L	_B32CC(PC),A0
+	BEQ.W	.main_loop
+	BTST.L	#3,D0				; Alternate
+	BEQ.W	.main_loop
+	BSR.W	save_picture
+	BRA.W	.main_loop
+.not_f10:
+	CMP.B	#60,D0			; F2
+	BNE.S	.not_f2
+	BSR.W	toggle_border
+	BRA.W	.main_loop
+.not_f2:
+	CMP.B	#57,D0			; Space
+	BNE.S	.not_space
+	BRA.S	.quit
+.not_space:
+	CMP.B	#1,D0			; Esc
+	BNE.S	.not_esc
+	BRA.S	.quit
+.not_esc:
+	CMP.B	#114,D0			; Keypad Enter
+	BNE.S	.no_key
+	BRA.S	.quit
+.no_key:
+	BRA.W	.main_loop
+.quit:
+	MOVE.L	old_vbl(PC),($70).W		; write vbl (vector)
+	MOVEA.L	format(PC),A0
 	CMPI.W	#2,$A(A0)
-	BEQ.S	_L051E
+	BEQ.S	.restore_st_palette
 	CMPI.W	#16,$A(A0)
-	BEQ.W	_L01E0
-	LEA	PALETTE1(PC),A0
+	BEQ.W	exit
+	LEA	old_palette(PC),A0
 	LEA	($FFFF9800).W,A1		; videl_palette[0] [Falcon]
 	MOVE.L	#$FF,D0
-_L0514:
+.restore_falcon_palette:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L0514
-	BRA.W	_L01E0
-_L051E:
-	MOVEM.L	PALETTE1(PC),D0-D7
+	DBRA	D0,.restore_falcon_palette
+	BRA.W	exit
+.restore_st_palette:
+	MOVEM.L	old_palette(PC),D0-D7
 	MOVEM.L	D0-D7,($FFFF8240).W		; write palette[0..15]
-	BRA.W	_L01E0
-_L052E:
+	BRA.W	exit
+
+;	Formats without a fixed size: calls the header parser, which fills in the
+;	width, height and depth of the format table entry, and sets up the screen.
+
+query_header:
 	MOVEA.L	$10(A0),A1
 	TST.L	A1
-	BMI.W	_L01E0
+	BMI.W	exit
 	JSR	(A1)
-	MOVEA.L	_B32CC(PC),A0
-	BRA.W	_L0256
-_L0542:
-	CMPI.W	#16,(_B36EC).L
-	BEQ.S	_L0598
-	BCHG.B	#0,(_D26C1).L
-	LEA	PALETTE0(PC),A0
+	MOVEA.L	format(PC),A0
+	BRA.W	setup_screen
+
+;	F1: switches between the picture's colours and grey.
+
+toggle_greyscale:
+	CMPI.W	#16,(screen_planes).L
+	BEQ.S	.done
+	BCHG.B	#0,(greyscale+1).L
+	LEA	palette(PC),A0
 	LEA	($FFFF9800).W,A1		; videl_palette[0] [Falcon]
 	MOVEQ	#1,D0
-	MOVE.W	_B36EC(PC),D1
+	MOVE.W	screen_planes(PC),D1
 	LSL.W	D1,D0
 	SUBQ.W	#1,D0
-	TST.W	(_D26C0).L
-	BEQ.S	_L0592
+	TST.W	(greyscale).L
+	BEQ.S	.colour
 	MOVEQ	#0,D1
 	MOVEQ	#0,D2
-_L0572:
+.grey:
 	MOVEQ	#0,D3
 	MOVE.B	(A0)+,D1
 	MOVE.B	(A0)+,D2
@@ -477,182 +504,201 @@ _L0572:
 	MOVE.B	D3,(A1)+
 	ADDQ.L	#1,A1
 	MOVE.B	D3,(A1)+
-	DBRA	D0,_L0572
+	DBRA	D0,.grey
 	RTS
 
-_L0592:
+.colour:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L0592
-_L0598:
+	DBRA	D0,.colour
+.done:
 	RTS
 
-_L059A:
-	LEA	_B32A4(PC),A0
+;	F2: switches the border around small pictures between the darkest and the
+;	brightest colour of the palette.
+
+toggle_border:
+	LEA	border_colour(PC),A0
 	MOVE.W	(A0),D0
-	CMP.W	_B32A6(PC),D0
-	BEQ.S	_L05AC
-	MOVE.W	_B32A6(PC),(A0)
-	BRA.S	_L05B0
-_L05AC:
-	MOVE.W	_B32A8(PC),(A0)
-_L05B0:
-	BRA.W	_L0B84
-_L05B4:
-	TST.W	(_D26A0).L
-	BEQ.W	_L069A
-	BRA.W	_L05C2
-_L05C2:
-	CMPI.W	#1,(_B36EC).L
-	BEQ.W	_L069A
+	CMP.W	darkest_colour(PC),D0
+	BEQ.S	.brightest
+	MOVE.W	darkest_colour(PC),(A0)
+	BRA.S	.fill
+.brightest:
+	MOVE.W	brightest_colour(PC),(A0)
+.fill:
+	BRA.W	fill_border
+
+;	Left mouse button: switches resolution.
+
+toggle_zoom:
+	TST.W	(high_res).L
+	BEQ.W	zoom_out
+	BRA.W	zoom_in
+
+;	Plus: low resolution (320 pixels wide), which shows the picture with
+;	double sized pixels. Sets the scroll limits.
+
+zoom_in:
+	CMPI.W	#1,(screen_planes).L
+	BEQ.W	zoom_out
 	MOVEQ	#0,D1
-	MOVEA.L	_B32CC(PC),A0
+	MOVEA.L	format(PC),A0
 	MOVE.W	6(A0),D0
 	CMP.W	#$280,D0
-	BGE.S	_L05F4
+	BGE.S	.min_x
 	CMP.W	#$140,D0
-	BGE.S	_L05E8
+	BGE.S	.width_320
 	MOVE.W	#$140,D0
-_L05E8:
+.width_320:
 	MOVE.W	#$280,D1
 	SUB.W	D0,D1
 	LSR.W	#1,D1
 	ANDI.W	#$FFF0,D1
-_L05F4:
-	MOVE.W	D1,(_D26AA).L
+.min_x:
+	MOVE.W	D1,(scroll_min_x).L
 	MOVE.W	#$C8,D2
-	TST.W	(_D26BE).L
-	BPL.S	_L060A
+	TST.W	(monitor).L
+	BPL.S	.not_vga
 	ADDI.W	#40,D2
-_L060A:
+.not_vga:
 	MOVEQ	#0,D1
 	MOVE.W	8(A0),D0
 	CMP.W	#$1E0,D0
-	BGE.S	_L0624
+	BGE.S	.min_y
 	CMP.W	D2,D0
-	BGE.S	_L061C
+	BGE.S	.height_ok
 	MOVE.W	D2,D0
-_L061C:
+.height_ok:
 	MOVE.W	#$1E0,D1
 	SUB.W	D0,D1
 	LSR.W	#1,D1
-_L0624:
-	MOVE.W	D1,(_D26AC).L
+.min_y:
+	MOVE.W	D1,(scroll_min_y).L
 	MOVE.W	6(A0),D0
 	CMP.W	#$140,D0
-	BGE.S	_L0638
+	BGE.S	.max_x
 	MOVE.W	#$140,D0
-_L0638:
+.max_x:
 	SUBI.W	#$140,D0
-	ADD.W	(_D26AA).L,D0
-	MOVE.W	D0,(_D26AE).L
+	ADD.W	(scroll_min_x).L,D0
+	MOVE.W	D0,(scroll_max_x).L
 	MOVE.W	8(A0),D0
 	CMP.W	D2,D0
-	BGE.S	_L0652
+	BGE.S	.max_y
 	MOVE.W	D2,D0
-_L0652:
+.max_y:
 	SUB.W	D2,D0
-	ADD.W	(_D26AC).L,D0
-	MOVE.W	D0,(_D26B0).L
-	CLR.W	(_D26A0).L
-	MOVEA.L	_B32B8(PC),A0
-	MOVE.W	_B36EC(PC),D1
-	LEA	_D267E(PC),A1
+	ADD.W	(scroll_min_y).L,D0
+	MOVE.W	D0,(scroll_max_y).L
+	CLR.W	(high_res).L
+	MOVEA.L	video_table(PC),A0
+	MOVE.W	screen_planes(PC),D1
+	LEA	mode_offsets(PC),A1
 	MOVE.W	(A1,D1.W*2),D1
 	LEA	-$30(A0,D1.W),A6
-	BSR.W	_L07EC
+	BSR.W	set_video
 	MOVEQ	#0,D0
-	MOVE.W	_B36E8(PC),D0
+	MOVE.W	screen_width(PC),D0
 	LSR.W	#4,D0
 	SUBI.W	#20,D0
-	MULU.W	_B36EC(PC),D0
-	MOVE.W	D0,(_D26B2).L
+	MULU.W	screen_planes(PC),D0
+	MOVE.W	D0,(line_offset).L
 	MOVE.W	D0,($FFFF820E).W		; write vid_lineoffset [Falcon]
 	RTS
 
-_L069A:
-	CLR.W	(_D26AA).L
-	CLR.W	(_D26AC).L
-	MOVEA.L	_B32CC(PC),A0
-	TST.W	(_D26BE).L
-	BMI.S	_L06D2
+;	Minus: high resolution (640 pixels wide). Sets the scroll limits.
+
+zoom_out:
+	CLR.W	(scroll_min_x).L
+	CLR.W	(scroll_min_y).L
+	MOVEA.L	format(PC),A0
+	TST.W	(monitor).L
+	BMI.S	.max_x
 	CMPI.W	#$1E0,8(A0)
-	BGE.S	_L06D2
+	BGE.S	.max_x
 	MOVE.W	#$1E0,D0
 	SUB.W	8(A0),D0
 	LSR.W	#1,D0
 	CMP.W	#40,D0
-	BLE.S	_L06CC
+	BLE.S	.top_ok
 	MOVEQ	#40,D0
-_L06CC:
-	MOVE.W	D0,(_D26AC).L
-_L06D2:
-	MOVE.W	_B36E8(PC),D0
+.top_ok:
+	MOVE.W	D0,(scroll_min_y).L
+.max_x:
+	MOVE.W	screen_width(PC),D0
 	SUBI.W	#$280,D0
-	MOVE.W	D0,(_D26AE).L
+	MOVE.W	D0,(scroll_max_x).L
 	MOVE.W	#$190,D2
-	TST.W	(_D26BE).L
-	BPL.S	_L06F0
+	TST.W	(monitor).L
+	BPL.S	.not_vga
 	ADDI.W	#80,D2
-_L06F0:
+.not_vga:
 	MOVE.W	8(A0),D0
 	CMP.W	D2,D0
-	BGE.S	_L0702
-	MOVE.W	_D26AC(PC),(_D26B0).L
-	BRA.S	_L070A
-_L0702:
+	BGE.S	.tall
+	MOVE.W	scroll_min_y(PC),(scroll_max_y).L
+	BRA.S	.set_mode
+.tall:
 	SUB.W	D2,D0
-	MOVE.W	D0,(_D26B0).L
-_L070A:
-	MOVE.W	#1,(_D26A0).L
-	MOVEA.L	_B32B8(PC),A0
-	MOVE.W	_B36EC(PC),D1
-	LEA	_D267E(PC),A1
+	MOVE.W	D0,(scroll_max_y).L
+.set_mode:
+	MOVE.W	#1,(high_res).L
+	MOVEA.L	video_table(PC),A0
+	MOVE.W	screen_planes(PC),D1
+	LEA	mode_offsets(PC),A1
 	MOVE.W	(A1,D1.W*2),D1
 	LEA	(A0,D1.W),A6
-	BSR.W	_L07EC
-	CMPI.W	#16,(_B36EC).L
-	BNE.S	_L073E
-	TST.W	(_D26BE).L
-	BMI.W	_L05C2
-_L073E:
+	BSR.W	set_video
+	CMPI.W	#16,(screen_planes).L
+	BNE.S	.line_offset
+	TST.W	(monitor).L
+	BMI.W	zoom_in
+.line_offset:
 	MOVEQ	#0,D0
-	MOVE.W	_B36E8(PC),D0
+	MOVE.W	screen_width(PC),D0
 	LSR.W	#4,D0
 	SUBI.W	#40,D0
-	MULU.W	_B36EC(PC),D0
-	MOVE.W	D0,(_D26B2).L
+	MULU.W	screen_planes(PC),D0
+	MOVE.W	D0,(line_offset).L
 	MOVE.W	D0,($FFFF820E).W		; write vid_lineoffset [Falcon]
 	RTS
 
-_L075A:
-	SUBI.W	#4,(_D26A4).L
+;	Cursor keys: scroll 4 pixels.
+
+scroll_up:
+	SUBI.W	#4,(scroll_dy).L
 	RTS
 
-_L0764:
-	ADDI.W	#4,(_D26A4).L
+scroll_down:
+	ADDI.W	#4,(scroll_dy).L
 	RTS
 
-_L076E:
-	SUBI.W	#4,(_D26A2).L
+scroll_left:
+	SUBI.W	#4,(scroll_dx).L
 	RTS
 
-_L0778:
-	ADDI.W	#4,(_D26A2).L
+scroll_right:
+	ADDI.W	#4,(scroll_dx).L
 	RTS
 
-_L0782:
+;	Saves the Videl registers and the ST shift mode in old_video.
+
+save_video:
 	MOVE.L	($FFFF820E).W,D0		; read vid_lineoffset [Falcon]
 	MOVE.L	($FFFF8264).W,D1		; read hscroll_noprefetch [STE/Falcon]
 	MOVEM.L	($FFFF8282).W,D2-D5		; read videl_hht [Falcon]
 	MOVEM.L	($FFFF82A2).W,D6-D7/A0		; read videl_vft [Falcon]
 	MOVEA.L	($FFFF82C0).W,A1		; read videl_vco [Falcon]
 	MOVEA.W	($FFFF820A).W,A2		; read syncmode
-	MOVEM.L	D0-D7/A0-A2,(_B371E).L
-	MOVE.L	($FFFF8260).W,(OLD_SHIFTMODE).L	; store shiftmode
-	MOVE.W	#1,(_D26BC).L
+	MOVEM.L	D0-D7/A0-A2,(old_video).L
+	MOVE.L	($FFFF8260).W,(old_shiftmode).L	; store shiftmode
+	MOVE.W	#1,(video_saved).L
 	RTS
 
-_L07B8:
+;	Restores the video registers saved by save_video (A6 = old_video). The ST
+;	shift mode is written too, unless skip_shiftmode is set.
+
+restore_video:
 	MOVE.W	#37,-(A7)			; Vsync - wait for the next vertical blank
 	TRAP	#14				; XBIOS #37 (Vsync)
 	ADDQ.L	#2,A7
@@ -665,11 +711,14 @@ _L07B8:
 	MOVE.L	A1,($FFFF82C0).W		; write videl_vco [Falcon]
 	MOVE.W	A2,($FFFF820A).W		; write syncmode
 	MOVE.W	(A6)+,D1
-	TST.W	(_D2358).L
-	BEQ.S	_L081A
+	TST.W	(skip_shiftmode).L
+	BEQ.S	write_shiftmode
 	RTS
 
-_L07EC:
+;	Sets a video mode from a 48-byte entry of a video table (A6): the Videl
+;	registers, then the ST shift mode if the entry has one.
+
+set_video:
 	MOVE.W	#37,-(A7)			; Vsync - wait for the next vertical blank
 	TRAP	#14				; XBIOS #37 (Vsync)
 	ADDQ.L	#2,A7
@@ -682,10 +731,13 @@ _L07EC:
 	MOVE.L	A1,($FFFF82C0).W		; write videl_vco [Falcon]
 	MOVE.W	A2,($FFFF820A).W		; write syncmode
 	MOVE.W	(A6)+,D1
-	BNE.S	_L081A
+	BNE.S	write_shiftmode
 	RTS
 
-_L081A:
+;	Writes the ST shift mode (D1), then the Videl registers again, as writing
+;	the shift mode changes them.
+
+write_shiftmode:
 	MOVE.W	D1,($FFFF8260).W		; write shiftmode
 	MOVE.L	D0,($FFFF820E).W		; write vid_lineoffset [Falcon]
 	MOVEM.L	D2-D5,($FFFF8282).W		; write videl_hht [Falcon]
@@ -694,54 +746,59 @@ _L081A:
 	MOVE.W	A2,($FFFF820A).W		; write syncmode
 	RTS
 
-_L0838:
+;	Writes D0 as D1 decimal digits ending at A0 + D1.
+
+format_number:
 	LEA	(A0,D1.W),A0
 	SUBQ.W	#1,D1
-_L083E:
+.digit:
 	DIVU.W	#10,D0
 	SWAP	D0
 	ADDI.W	#48,D0
 	MOVE.B	D0,-(A0)
 	CLR.W	D0
 	SWAP	D0
-	DBRA	D1,_L083E
+	DBRA	D1,.digit
 	RTS
 
-_L0854:
-	LEA	STR_0000_X(PC),A0
-	MOVEA.L	_B32CC(PC),A1
+;	Ctrl+Alt+F10: saves the picture's size as text in SAVEDPIC.TXT, the
+;	palette in SAVEDPIC.PAL and the screen data in SAVEDPIC.BIN.
+
+save_picture:
+	LEA	info_text(PC),A0
+	MOVEA.L	format(PC),A1
 	MOVEQ	#0,D0
 	MOVE.W	6(A1),D0
 	MOVE.W	#4,D1
-	BSR.S	_L0838
-	LEA	STR_0000_PIXELS(PC),A0
+	BSR.S	format_number
+	LEA	info_height(PC),A0
 	MOVEQ	#0,D0
 	MOVE.W	8(A1),D0
 	MOVE.W	#4,D1
-	BSR.S	_L0838
+	BSR.S	format_number
 	MOVEQ	#1,D0
 	MOVE.W	$A(A1),D1
 	LSL.L	D1,D0
 	CMP.L	#$10000,D0
-	BEQ.S	_L0894
+	BEQ.S	.true_color
 	MOVE.W	#3,D1
-	LEA	STR_000_COLORS(PC),A0
-	BSR.S	_L0838
-	BRA.S	_L08A4
-_L0894:
-	LEA	STR_000_COLORS(PC),A0
+	LEA	info_colours(PC),A0
+	BSR.S	format_number
+	BRA.S	.write_info
+.true_color:
+	LEA	info_colours(PC),A0
 	MOVE.L	#'True',(A0)
 	MOVE.W	#$2E20,9(A0)
 
-_L08A4:
-	MOVE.W	#0,-(A7)			; attr - file attributes (unrecognised #$0)
-	MOVE.L	#STR_SAVEDPIC_TXT,-(A7)		; fname "SAVEDPIC.TXT"
+.write_info:
+	MOVE.W	#0,-(A7)			; attr - file attributes (normal)
+	MOVE.L	#name_txt,-(A7)		; fname "SAVEDPIC.TXT"
 	MOVE.W	#60,-(A7)			; Fcreate - create and open a file
 	TRAP	#1				; GEMDOS #60 (Fcreate)
 	ADDQ.L	#8,A7
 	MOVE.L	D0,D6
 
-	MOVE.L	#STR_0000_X,-(A7)		; buf "0000 X 0000 pixels, 000 colors."
+	MOVE.L	#info_text,-(A7)		; buf "0000 X 0000 pixels, 000 colors."
 	MOVE.L	#31,-(A7)			; count - byte count
 	MOVE.W	D6,-(A7)			; handle - file handle
 	MOVE.W	#64,-(A7)			; Fwrite - write to a file handle
@@ -754,20 +811,20 @@ _L08A4:
 	ADDQ.L	#4,A7
 
 	MOVEQ	#1,D7
-	MOVE.W	_B36EC(PC),D0
+	MOVE.W	screen_planes(PC),D0
 	CMP.W	#16,D0
-	BEQ.S	_L091C
+	BEQ.S	.save_pixels
 	LSL.W	D0,D7
 	LSL.W	#2,D7
 
-	MOVE.W	#0,-(A7)			; attr - file attributes (unrecognised #$0)
-	MOVE.L	#STR_SAVEDPIC_PAL,-(A7)		; fname "SAVEDPIC.PAL"
+	MOVE.W	#0,-(A7)			; attr - file attributes (normal)
+	MOVE.L	#name_pal,-(A7)		; fname "SAVEDPIC.PAL"
 	MOVE.W	#60,-(A7)			; Fcreate - create and open a file
 	TRAP	#1				; GEMDOS #60 (Fcreate)
 	ADDQ.L	#8,A7
 	MOVE.L	D0,D6
 
-	MOVE.L	#PALETTE0,-(A7)			; buf - transfer buffer pointer → PALETTE0
+	MOVE.L	#palette,-(A7)			; buf - transfer buffer pointer → palette
 	MOVE.L	D7,-(A7)			; count - byte count
 	MOVE.W	D6,-(A7)			; handle - file handle
 	MOVE.W	#64,-(A7)			; Fwrite - write to a file handle
@@ -779,24 +836,24 @@ _L08A4:
 	TRAP	#1				; GEMDOS #62 (Fclose)
 	ADDQ.L	#4,A7
 
-_L091C:
-	MOVEA.L	_B32CC(PC),A0
+.save_pixels:
+	MOVEA.L	format(PC),A0
 	MOVE.W	6(A0),D7
 	CMP.W	#$280,D7
-	BLT.S	_L096A
+	BLT.S	.narrow
 	LSR.W	#3,D7
 	MULU.W	$A(A0),D7
 	MULU.W	8(A0),D7
-	BSR.W	_L0F6E
+	BSR.W	picture_position
 
-	MOVE.W	#0,-(A7)			; attr - file attributes (unrecognised #$0)
-	MOVE.L	#STR_SAVEDPIC_BIN,-(A7)		; fname "SAVEDPIC.BIN"
+	MOVE.W	#0,-(A7)			; attr - file attributes (normal)
+	MOVE.L	#name_bin,-(A7)		; fname "SAVEDPIC.BIN"
 	MOVE.W	#60,-(A7)			; Fcreate - create and open a file
 	TRAP	#1				; GEMDOS #60 (Fcreate)
 	ADDQ.L	#8,A7
 	MOVE.L	D0,D6
 
-	MOVE.L	_B4F4E(PC),-(A7)		; buf - transfer buffer pointer
+	MOVE.L	picture_start(PC),-(A7)		; buf - transfer buffer pointer
 	MOVE.L	D7,-(A7)			; count - byte count
 	MOVE.W	D6,-(A7)			; handle - file handle
 	MOVE.W	#64,-(A7)			; Fwrite - write to a file handle
@@ -810,7 +867,7 @@ _L091C:
 
 	RTS
 
-_L096A:
+.narrow:
 	LSR.W	#3,D7
 	MULU.W	$A(A0),D7
 	MULU.W	8(A0),D7
@@ -821,12 +878,12 @@ _L096A:
 	ADDQ.L	#6,A7
 	TST.L	D0
 
-	BEQ.S	_L09F8
+	BEQ.S	.done
 	MOVEA.L	D0,A6
 	MOVEA.L	D0,A2
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
-	MOVEA.L	_B32CC(PC),A0
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
+	MOVEA.L	format(PC),A0
 	MOVE.W	6(A0),D1
 	LSR.W	#4,D1
 	MULU.W	$A(A0),D1
@@ -834,19 +891,19 @@ _L096A:
 	MOVE.W	#$280,D3
 	SUB.W	6(A0),D3
 	LSR.W	#3,D3
-	MULU.W	_B36EC(PC),D3
+	MULU.W	screen_planes(PC),D3
 	MOVE.W	8(A0),D0
 	SUBQ.W	#1,D0
-_L09B2:
+.line:
 	MOVE.L	D1,D2
-_L09B4:
+.word:
 	MOVE.W	(A1)+,(A2)+
-	DBRA	D2,_L09B4
+	DBRA	D2,.word
 	ADDA.L	D3,A1
-	DBRA	D0,_L09B2
+	DBRA	D0,.line
 
-	MOVE.W	#0,-(A7)			; attr - file attributes (unrecognised #$0)
-	MOVE.L	#STR_SAVEDPIC_BIN,-(A7)		; fname "SAVEDPIC.BIN"
+	MOVE.W	#0,-(A7)			; attr - file attributes (normal)
+	MOVE.L	#name_bin,-(A7)		; fname "SAVEDPIC.BIN"
 	MOVE.W	#60,-(A7)			; Fcreate - create and open a file
 	TRAP	#1				; GEMDOS #60 (Fcreate)
 	ADDQ.L	#8,A7
@@ -869,113 +926,126 @@ _L09B4:
 	TRAP	#1				; GEMDOS #73 (Mfree)
 	ADDQ.L	#6,A7
 
-_L09F8:
+.done:
 	RTS
 
-VBL_HANDLER:
+;	VBL interrupt. Sets the screen address, line offset and fine scroll
+;	calculated in the previous frame, then moves the visible part of the
+;	screen by the scroll speed (mouse and cursor keys) within the scroll limits
+;	and calculates them for the next frame. Continues in the old VBL handler.
+
+vbl_handler:
 	MOVE.W	#$2700,SR
-	TST.W	(_L0B14).L
-	BEQ.W	_L0B12
-	CLR.W	(_L0B14).L
-	MOVE.B	_D26B9(PC),($FFFF8201).W	; write vidbase_hi
-	MOVE.B	_D26BA(PC),($FFFF8203).W	; write vidbase_mid
-	MOVE.B	_D26BB(PC),($FFFF820D).W	; write vidbase_lo [STE+]
-	MOVE.B	_D26B9(PC),($FFFF8205).W	; write vidcount_hi
-	MOVE.B	_D26BA(PC),($FFFF8207).W	; write vidcount_mid
-	MOVE.B	_D26BB(PC),($FFFF8209).W	; write vidcount_lo
-	MOVE.W	_D26B6(PC),($FFFF8264).W	; write hscroll_noprefetch [STE/Falcon]
-	MOVE.W	_D26B4(PC),($FFFF820E).W	; write vid_lineoffset [Falcon]
+	TST.W	(vbl_ready).L
+	BEQ.W	.busy
+	CLR.W	(vbl_ready).L
+	MOVE.B	vbl_screen+1(PC),($FFFF8201).W	; write vidbase_hi
+	MOVE.B	vbl_screen+2(PC),($FFFF8203).W	; write vidbase_mid
+	MOVE.B	vbl_screen+3(PC),($FFFF820D).W	; write vidbase_lo [STE+]
+	MOVE.B	vbl_screen+1(PC),($FFFF8205).W	; write vidcount_hi
+	MOVE.B	vbl_screen+2(PC),($FFFF8207).W	; write vidcount_mid
+	MOVE.B	vbl_screen+3(PC),($FFFF8209).W	; write vidcount_lo
+	MOVE.W	vbl_hscroll(PC),($FFFF8264).W	; write hscroll_noprefetch [STE/Falcon]
+	MOVE.W	vbl_line_offset(PC),($FFFF820E).W	; write vid_lineoffset [Falcon]
 	MOVE.W	#$2300,SR
 	MOVEM.L	D0-D7/A0-A6,-(A7)
-	MOVE.W	_D26A6(PC),D0
-	ADD.W	_D26A2(PC),D0
-	CMP.W	_D26AA(PC),D0
-	BGE.S	_L0A58
-	MOVE.W	_D26AA(PC),D0
-_L0A58:
-	CMP.W	_D26AE(PC),D0
-	BLE.S	_L0A62
-	MOVE.W	_D26AE(PC),D0
-_L0A62:
-	MOVE.W	D0,(_D26A6).L
-	CLR.W	(_D26A2).L
-	MOVE.W	_D26A8(PC),D0
-	ADD.W	_D26A4(PC),D0
-	CMP.W	_D26AC(PC),D0
-	BGE.S	_L0A80
-	MOVE.W	_D26AC(PC),D0
-_L0A80:
-	CMP.W	_D26B0(PC),D0
-	BLE.S	_L0A8A
-	MOVE.W	_D26B0(PC),D0
-_L0A8A:
-	MOVE.W	D0,(_D26A8).L
-	CLR.W	(_D26A4).L
-	MOVE.W	_B36E8(PC),D0
+	MOVE.W	scroll_x(PC),D0
+	ADD.W	scroll_dx(PC),D0
+	CMP.W	scroll_min_x(PC),D0
+	BGE.S	.x_not_below
+	MOVE.W	scroll_min_x(PC),D0
+.x_not_below:
+	CMP.W	scroll_max_x(PC),D0
+	BLE.S	.x_ok
+	MOVE.W	scroll_max_x(PC),D0
+.x_ok:
+	MOVE.W	D0,(scroll_x).L
+	CLR.W	(scroll_dx).L
+	MOVE.W	scroll_y(PC),D0
+	ADD.W	scroll_dy(PC),D0
+	CMP.W	scroll_min_y(PC),D0
+	BGE.S	.y_not_below
+	MOVE.W	scroll_min_y(PC),D0
+.y_not_below:
+	CMP.W	scroll_max_y(PC),D0
+	BLE.S	.y_ok
+	MOVE.W	scroll_max_y(PC),D0
+.y_ok:
+	MOVE.W	D0,(scroll_y).L
+	CLR.W	(scroll_dy).L
+	MOVE.W	screen_width(PC),D0
 	LSR.W	#3,D0
-	MULU.W	_B36EC(PC),D0
-	MULU.W	_D26A8(PC),D0
-	CMPI.W	#16,(_B36EC).L
-	BNE.S	_L0AC6
-	MOVE.W	_D26B2(PC),(_D26B4).L
+	MULU.W	screen_planes(PC),D0
+	MULU.W	scroll_y(PC),D0
+	CMPI.W	#16,(screen_planes).L
+	BNE.S	.bitplanes
+	MOVE.W	line_offset(PC),(vbl_line_offset).L
 	MOVEQ	#0,D1
-	MOVE.W	_D26A6(PC),D1
+	MOVE.W	scroll_x(PC),D1
 	ADD.W	D1,D1
 	BCLR.L	#1,D1
 	ADD.L	D1,D0
-	BRA.S	_L0AF6
-_L0AC6:
-	MOVE.W	_D26B2(PC),(_D26B4).L
-	MOVE.W	_D26A6(PC),D1
+	BRA.S	.set_screen
+.bitplanes:
+	MOVE.W	line_offset(PC),(vbl_line_offset).L
+	MOVE.W	scroll_x(PC),D1
 	LSR.W	#4,D1
-	MULU.W	_B36EC(PC),D1
+	MULU.W	screen_planes(PC),D1
 	ADD.L	D1,D1
 	ADD.L	D1,D0
-	MOVE.W	_D26A6(PC),D1
+	MOVE.W	scroll_x(PC),D1
 	ANDI.W	#15,D1
-	BEQ.S	_L0AF0
-	MOVE.W	_B36EC(PC),D2
-	SUB.W	D2,(_D26B4).L
-_L0AF0:
-	MOVE.W	D1,(_D26B6).L
-_L0AF6:
-	ADD.L	_D2BEE(PC),D0
-	MOVE.L	D0,(_D26B8).L
+	BEQ.S	.no_fine_scroll
+	MOVE.W	screen_planes(PC),D2
+	SUB.W	D2,(vbl_line_offset).L
+.no_fine_scroll:
+	MOVE.W	D1,(vbl_hscroll).L
+.set_screen:
+	ADD.L	screen(PC),D0
+	MOVE.L	D0,(vbl_screen).L
 	MOVEM.L	(A7)+,D0-D7/A0-A6
-	MOVE.L	OLD_VBL(PC),-(A7)
-	MOVE.W	#$FFFF,(_L0B14).L
+	MOVE.L	old_vbl(PC),-(A7)
+	MOVE.W	#$FFFF,(vbl_ready).L
 	RTS
 
-_L0B12:
+.busy:
 	RTE
 
-_L0B14:
+;	Cleared while vbl_handler runs, so it isn't entered twice.
+
+vbl_ready:
 	dc.w	$FFFF
-_L0B16:
+
+;	IKBD mouse packet handler: saves the buttons and adds the movement to the
+;	scroll speed.
+
+mouse_handler:
 	MOVE.W	D0,-(A7)
-	MOVE.B	(A0)+,(_B32BD).L
+	MOVE.B	(A0)+,(mouse_buttons).L
 	MOVE.B	(A0)+,D0
 	EXT.W	D0
-	ADD.W	D0,(_D26A2).L
+	ADD.W	D0,(scroll_dx).L
 	MOVE.B	(A0)+,D0
 	EXT.W	D0
-	ADD.W	D0,(_D26A4).L
+	ADD.W	D0,(scroll_dy).L
 	SUBQ.W	#3,A0
 	MOVE.W	(A7)+,D0
 	RTS
 
-_L0B38:
-	LEA	PALETTE0(PC),A0
+;	Finds the darkest and the brightest colour of the palette.
+
+find_border_colours:
+	LEA	palette(PC),A0
 	MOVE.W	#$300,D2
 	MOVEQ	#0,D1
 	MOVEQ	#0,D3
 	MOVEQ	#0,D6
 	MOVEQ	#0,D7
 	MOVEQ	#1,D5
-	MOVE.W	_B36EC(PC),D1
+	MOVE.W	screen_planes(PC),D1
 	LSL.W	D1,D5
 	SUBQ.W	#1,D5
-_L0B52:
+.colour:
 	MOVEQ	#0,D0
 	MOVE.B	(A0)+,D0
 	MOVE.B	(A0)+,D1
@@ -984,26 +1054,29 @@ _L0B52:
 	MOVE.B	(A0)+,D1
 	ADD.W	D1,D0
 	CMP.W	D0,D6
-	BGE.S	_L0B68
+	BGE.S	.not_brighter
 	MOVE.W	D0,D6
 	MOVE.W	D3,D7
-_L0B68:
+.not_brighter:
 	CMP.W	D0,D2
-	BLE.S	_L0B70
+	BLE.S	.not_darker
 	MOVE.W	D0,D2
 	MOVE.W	D3,D4
-_L0B70:
+.not_darker:
 	ADDQ.W	#1,D3
-	DBRA	D5,_L0B52
-	MOVE.W	D4,(_B32A6).L
-	MOVE.W	D7,(_B32A8).L
+	DBRA	D5,.colour
+	MOVE.W	D4,(darkest_colour).L
+	MOVE.W	D7,(brightest_colour).L
 	RTS
 
-_L0B84:
-	MOVEA.L	_B32CC(PC),A0
+;	Fills the screen around the picture with the border colour, for 8, 4, 2
+;	and 1 bitplanes (16-bit screens are filled with words of 0).
+
+fill_border:
+	MOVEA.L	format(PC),A0
 	MOVE.W	6(A0),D0
 	CMP.W	#$280,D0
-	BGE.S	_L0BC6
+	BGE.S	.wide
 	MOVE.W	#40,D1
 	LSR.W	#4,D0
 	SUB.W	D0,D1
@@ -1014,18 +1087,18 @@ _L0B84:
 	MULU.W	$A(A0),D1
 	SUBQ.W	#1,D0
 	SUBQ.W	#1,D1
-	MOVE.W	D0,(_B32B2).L
-	MOVE.W	D1,(_B32B4).L
+	MOVE.W	D0,(border_left).L
+	MOVE.W	D1,(border_right).L
 	MOVE.W	8(A0),D0
 	SUBQ.W	#1,D0
-	MOVE.W	D0,(_B32B0).L
-	BRA.S	_L0BCE
-_L0BC6:
-	MOVE.W	#$FFFF,(_B32B0).L
-_L0BCE:
+	MOVE.W	D0,(border_sides).L
+	BRA.S	.vertical
+.wide:
+	MOVE.W	#$FFFF,(border_sides).L
+.vertical:
 	MOVE.W	8(A0),D0
 	CMP.W	#$1E0,D0
-	BGE.S	_L0BF6
+	BGE.S	.tall
 	MOVE.W	#$1E0,D1
 	SUB.W	D0,D1
 	MOVE.W	D1,D0
@@ -1033,103 +1106,103 @@ _L0BCE:
 	SUB.W	D0,D1
 	SUBQ.W	#1,D0
 	SUBQ.W	#1,D1
-	MOVE.W	D0,(_B32AE).L
-	MOVE.W	D1,(_B32B6).L
-	BRA.S	_L0C06
-_L0BF6:
-	MOVE.W	#$FFFF,(_B32AE).L
-	MOVE.W	#$FFFF,(_B32B6).L
-_L0C06:
-	MOVE.W	_B36E8(PC),D0
+	MOVE.W	D0,(border_top).L
+	MOVE.W	D1,(border_bottom).L
+	BRA.S	.pattern
+.tall:
+	MOVE.W	#$FFFF,(border_top).L
+	MOVE.W	#$FFFF,(border_bottom).L
+.pattern:
+	MOVE.W	screen_width(PC),D0
 	LSR.W	#3,D0
 	MULU.W	$A(A0),D0
-	MOVE.W	D0,(_B32AA).L
+	MOVE.W	D0,(screen_line_bytes).L
 	MOVE.W	6(A0),D0
 	LSR.W	#3,D0
 	MULU.W	$A(A0),D0
-	MOVE.W	D0,(_B32AC).L
+	MOVE.W	D0,(picture_line_bytes).L
 	MOVEQ	#0,D0
 	MOVEQ	#0,D1
 	MOVEQ	#0,D2
 	MOVEQ	#0,D3
-	MOVE.W	_B32A4(PC),D4
+	MOVE.W	border_colour(PC),D4
 	BTST.L	#0,D4
-	BEQ.S	_L0C3E
+	BEQ.S	.plane1
 	MOVE.L	#$FFFF0000,D0
-_L0C3E:
+.plane1:
 	BTST.L	#1,D4
-	BEQ.S	_L0C48
+	BEQ.S	.plane2
 	MOVE.W	#$FFFF,D0
-_L0C48:
+.plane2:
 	BTST.L	#2,D4
-	BEQ.S	_L0C54
+	BEQ.S	.plane3
 	MOVE.L	#$FFFF0000,D1
-_L0C54:
+.plane3:
 	BTST.L	#3,D4
-	BEQ.S	_L0C5E
+	BEQ.S	.plane4
 	MOVE.W	#$FFFF,D1
-_L0C5E:
+.plane4:
 	BTST.L	#4,D4
-	BEQ.S	_L0C6A
+	BEQ.S	.plane5
 	MOVE.L	#$FFFF0000,D2
-_L0C6A:
+.plane5:
 	BTST.L	#5,D4
-	BEQ.S	_L0C74
+	BEQ.S	.plane6
 	MOVE.W	#$FFFF,D2
-_L0C74:
+.plane6:
 	BTST.L	#6,D4
-	BEQ.S	_L0C80
+	BEQ.S	.plane7
 	MOVE.L	#$FFFF0000,D3
-_L0C80:
+.plane7:
 	BTST.L	#7,D4
-	BEQ.S	_L0C8A
+	BEQ.S	.pattern_done
 	MOVE.W	#$FFFF,D3
-_L0C8A:
+.pattern_done:
 	MOVEQ	#0,D7
-	MOVE.W	_D2708(PC),D7
+	MOVE.W	picture_width(PC),D7
 	ANDI.W	#15,D7
-	LEA	_D235A(PC),A0
+	LEA	edge_masks(PC),A0
 	MOVE.L	(A0,D7.W*4),D7
-	MOVEA.L	_B32CC(PC),A0
+	MOVEA.L	format(PC),A0
 	MOVE.W	$A(A0),D4
 	CMP.W	#2,D4
-	BLT.W	_L0EE0
-	BEQ.W	_L0E50
+	BLT.W	.words
+	BEQ.W	.planes2
 	CMP.W	#8,D4
-	BLT.W	_L0DA4
-	BEQ.S	_L0CC0
+	BLT.W	.planes4
+	BEQ.S	.planes8
 	MOVEQ	#0,D0
-	BRA.W	_L0EE0
-_L0CC0:
-	MOVEA.L	_D2BEE(PC),A0
-	MOVE.W	_B32AE(PC),D5
-	BMI.S	_L0CE2
-_L0CCA:
-	MOVE.W	_B32AA(PC),D4
+	BRA.W	.words
+.planes8:
+	MOVEA.L	screen(PC),A0
+	MOVE.W	border_top(PC),D5
+	BMI.S	.sides8
+.top_line8:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#4,D4
 	SUBQ.W	#1,D4
-_L0CD2:
+.top8:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
 	MOVE.L	D2,(A0)+
 	MOVE.L	D3,(A0)+
-	DBRA	D4,_L0CD2
-	DBRA	D5,_L0CCA
-_L0CE2:
-	MOVE.W	_B32B0(PC),D5
-	BMI.S	_L0D66
-_L0CE8:
-	MOVE.W	_B32B2(PC),D4
-	BMI.S	_L0CFC
+	DBRA	D4,.top8
+	DBRA	D5,.top_line8
+.sides8:
+	MOVE.W	border_sides(PC),D5
+	BMI.S	.bottom8
+.side_line8:
+	MOVE.W	border_left(PC),D4
+	BMI.S	.edge8
 	LSR.W	#3,D4
-_L0CF0:
+.left8:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
 	MOVE.L	D2,(A0)+
 	MOVE.L	D3,(A0)+
-	DBRA	D4,_L0CF0
-_L0CFC:
-	ADDA.W	_B32AC(PC),A0
+	DBRA	D4,.left8
+.edge8:
+	ADDA.W	picture_line_bytes(PC),A0
 	MOVE.L	D0,D6
 	AND.L	D7,D6
 	MOVE.L	-$10(A0),D4
@@ -1162,65 +1235,65 @@ _L0CFC:
 	NOT.L	D7
 	OR.L	D4,D6
 	MOVE.L	D6,-4(A0)
-	MOVE.W	_B32B4(PC),D4
+	MOVE.W	border_right(PC),D4
 	LSR.W	#3,D4
-_L0D56:
+.right8:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
 	MOVE.L	D2,(A0)+
 	MOVE.L	D3,(A0)+
-	DBRA	D4,_L0D56
-	DBRA	D5,_L0CE8
-_L0D66:
-	MOVE.W	_B32B6(PC),D5
-	BMI.S	_L0DA2
-	MOVE.W	(_B32AE).L,D6
-	MOVEA.L	_B32CC(PC),A0
+	DBRA	D4,.right8
+	DBRA	D5,.side_line8
+.bottom8:
+	MOVE.W	border_bottom(PC),D5
+	BMI.S	.done8
+	MOVE.W	(border_top).L,D6
+	MOVEA.L	format(PC),A0
 	ADD.W	8(A0),D6
 	ADDQ.L	#1,D6
-	MULU.W	(_B32AA).L,D6
-	MOVEA.L	(_D2BEE).L,A0
+	MULU.W	(screen_line_bytes).L,D6
+	MOVEA.L	(screen).L,A0
 	ADDA.L	D6,A0
-_L0D8A:
-	MOVE.W	_B32AA(PC),D4
+.bottom_line8:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#4,D4
 	SUBQ.W	#1,D4
-_L0D92:
+.bottom_block8:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
 	MOVE.L	D2,(A0)+
 	MOVE.L	D3,(A0)+
-	DBRA	D4,_L0D92
-	DBRA	D5,_L0D8A
-_L0DA2:
+	DBRA	D4,.bottom_block8
+	DBRA	D5,.bottom_line8
+.done8:
 	RTS
 
-_L0DA4:
-	MOVEA.L	_D2BEE(PC),A0
-	MOVE.W	_B32AE(PC),D5
-	BMI.S	_L0DC2
-_L0DAE:
-	MOVE.W	_B32AA(PC),D4
+.planes4:
+	MOVEA.L	screen(PC),A0
+	MOVE.W	border_top(PC),D5
+	BMI.S	.sides4
+.top_line4:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#3,D4
 	SUBQ.W	#1,D4
-_L0DB6:
+.top4:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
-	DBRA	D4,_L0DB6
-	DBRA	D5,_L0DAE
-_L0DC2:
-	MOVE.W	_B32B0(PC),D5
-	BMI.S	_L0E16
-_L0DC8:
-	MOVE.W	_B32B2(PC),D4
-	BMI.S	_L0DD8
+	DBRA	D4,.top4
+	DBRA	D5,.top_line4
+.sides4:
+	MOVE.W	border_sides(PC),D5
+	BMI.S	.bottom4
+.side_line4:
+	MOVE.W	border_left(PC),D4
+	BMI.S	.edge4
 	LSR.W	#2,D4
-_L0DD0:
+.left4:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
-	DBRA	D4,_L0DD0
-_L0DD8:
-	ADDA.W	_B32AC(PC),A0
+	DBRA	D4,.left4
+.edge4:
+	ADDA.W	picture_line_bytes(PC),A0
 	MOVE.L	D0,D6
 	AND.L	D7,D6
 	MOVE.L	-8(A0),D4
@@ -1237,59 +1310,59 @@ _L0DD8:
 	NOT.L	D7
 	OR.L	D4,D6
 	MOVE.L	D6,-4(A0)
-	MOVE.W	_B32B4(PC),D4
+	MOVE.W	border_right(PC),D4
 	LSR.W	#2,D4
-_L0E0A:
+.right4:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
-	DBRA	D4,_L0E0A
-	DBRA	D5,_L0DC8
-_L0E16:
-	MOVE.W	_B32B6(PC),D5
-	BMI.S	_L0E4E
-	MOVE.W	(_B32AE).L,D6
-	MOVEA.L	_B32CC(PC),A0
+	DBRA	D4,.right4
+	DBRA	D5,.side_line4
+.bottom4:
+	MOVE.W	border_bottom(PC),D5
+	BMI.S	.done4
+	MOVE.W	(border_top).L,D6
+	MOVEA.L	format(PC),A0
 	ADD.W	8(A0),D6
 	ADDQ.L	#1,D6
-	MULU.W	(_B32AA).L,D6
-	MOVEA.L	(_D2BEE).L,A0
+	MULU.W	(screen_line_bytes).L,D6
+	MOVEA.L	(screen).L,A0
 	ADDA.L	D6,A0
-_L0E3A:
-	MOVE.W	_B32AA(PC),D4
+.bottom_line4:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#3,D4
 	SUBQ.W	#1,D4
-_L0E42:
+.bottom_block4:
 	MOVE.L	D0,(A0)+
 	MOVE.L	D1,(A0)+
-	DBRA	D4,_L0E42
-	DBRA	D5,_L0E3A
-_L0E4E:
+	DBRA	D4,.bottom_block4
+	DBRA	D5,.bottom_line4
+.done4:
 	RTS
 
-_L0E50:
-	MOVEA.L	_D2BEE(PC),A0
-	MOVE.W	_B32AE(PC),D5
-	BMI.S	_L0E6C
-_L0E5A:
-	MOVE.W	_B32AA(PC),D4
+.planes2:
+	MOVEA.L	screen(PC),A0
+	MOVE.W	border_top(PC),D5
+	BMI.S	.sides2
+.top_line2:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#2,D4
 	SUBQ.W	#1,D4
-_L0E62:
+.top2:
 	MOVE.L	D0,(A0)+
-	DBRA	D4,_L0E62
-	DBRA	D5,_L0E5A
-_L0E6C:
-	MOVE.W	_B32B0(PC),D5
-	BMI.S	_L0EA8
-_L0E72:
-	MOVE.W	_B32B2(PC),D4
-	BMI.S	_L0E80
+	DBRA	D4,.top2
+	DBRA	D5,.top_line2
+.sides2:
+	MOVE.W	border_sides(PC),D5
+	BMI.S	.bottom2
+.side_line2:
+	MOVE.W	border_left(PC),D4
+	BMI.S	.edge2
 	LSR.W	#1,D4
-_L0E7A:
+.left2:
 	MOVE.L	D0,(A0)+
-	DBRA	D4,_L0E7A
-_L0E80:
-	ADDA.W	_B32AC(PC),A0
+	DBRA	D4,.left2
+.edge2:
+	ADDA.W	picture_line_bytes(PC),A0
 	MOVE.L	D0,D6
 	AND.L	D7,D6
 	MOVE.L	-4(A0),D4
@@ -1298,57 +1371,57 @@ _L0E80:
 	NOT.L	D7
 	OR.L	D4,D6
 	MOVE.L	D6,-4(A0)
-	MOVE.W	_B32B4(PC),D4
+	MOVE.W	border_right(PC),D4
 	LSR.W	#1,D4
-_L0E9E:
+.right2:
 	MOVE.L	D0,(A0)+
-	DBRA	D4,_L0E9E
-	DBRA	D5,_L0E72
-_L0EA8:
-	MOVE.W	_B32B6(PC),D5
-	BMI.S	_L0EDE
-	MOVE.W	(_B32AE).L,D6
-	MOVEA.L	_B32CC(PC),A0
+	DBRA	D4,.right2
+	DBRA	D5,.side_line2
+.bottom2:
+	MOVE.W	border_bottom(PC),D5
+	BMI.S	.done2
+	MOVE.W	(border_top).L,D6
+	MOVEA.L	format(PC),A0
 	ADD.W	8(A0),D6
 	ADDQ.L	#1,D6
-	MULU.W	(_B32AA).L,D6
-	MOVEA.L	(_D2BEE).L,A0
+	MULU.W	(screen_line_bytes).L,D6
+	MOVEA.L	(screen).L,A0
 	ADDA.L	D6,A0
-_L0ECC:
-	MOVE.W	_B32AA(PC),D4
+.bottom_line2:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#2,D4
 	SUBQ.W	#1,D4
-_L0ED4:
+.bottom_block2:
 	MOVE.L	D0,(A0)+
-	DBRA	D4,_L0ED4
-	DBRA	D5,_L0ECC
-_L0EDE:
+	DBRA	D4,.bottom_block2
+	DBRA	D5,.bottom_line2
+.done2:
 	RTS
 
-_L0EE0:
+.words:
 	SWAP	D0
-	MOVEA.L	_D2BEE(PC),A0
-	MOVE.W	_B32AE(PC),D5
-	BMI.S	_L0EFE
-_L0EEC:
-	MOVE.W	_B32AA(PC),D4
+	MOVEA.L	screen(PC),A0
+	MOVE.W	border_top(PC),D5
+	BMI.S	.sides1
+.top_line1:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#1,D4
 	SUBQ.W	#1,D4
-_L0EF4:
+.top1:
 	MOVE.W	D0,(A0)+
-	DBRA	D4,_L0EF4
-	DBRA	D5,_L0EEC
-_L0EFE:
-	MOVE.W	_B32B0(PC),D5
-	BMI.S	_L0F36
-_L0F04:
-	MOVE.W	_B32B2(PC),D4
-	BMI.S	_L0F10
-_L0F0A:
+	DBRA	D4,.top1
+	DBRA	D5,.top_line1
+.sides1:
+	MOVE.W	border_sides(PC),D5
+	BMI.S	.bottom1
+.side_line1:
+	MOVE.W	border_left(PC),D4
+	BMI.S	.edge1
+.left1:
 	MOVE.W	D0,(A0)+
-	DBRA	D4,_L0F0A
-_L0F10:
-	ADDA.W	_B32AC(PC),A0
+	DBRA	D4,.left1
+.edge1:
+	ADDA.W	picture_line_bytes(PC),A0
 	MOVE.W	D0,D6
 	AND.W	D7,D6
 	MOVE.W	-2(A0),D4
@@ -1357,62 +1430,65 @@ _L0F10:
 	NOT.W	D7
 	OR.W	D4,D6
 	MOVE.W	D6,-2(A0)
-	MOVE.W	_B32B4(PC),D4
-_L0F2C:
+	MOVE.W	border_right(PC),D4
+.right1:
 	MOVE.W	D0,(A0)+
-	DBRA	D4,_L0F2C
-	DBRA	D5,_L0F04
-_L0F36:
-	MOVE.W	_B32B6(PC),D5
-	BMI.S	_L0F6C
-	MOVE.W	(_B32AE).L,D6
-	MOVEA.L	_B32CC(PC),A0
+	DBRA	D4,.right1
+	DBRA	D5,.side_line1
+.bottom1:
+	MOVE.W	border_bottom(PC),D5
+	BMI.S	.done1
+	MOVE.W	(border_top).L,D6
+	MOVEA.L	format(PC),A0
 	ADD.W	8(A0),D6
 	ADDQ.L	#1,D6
-	MULU.W	(_B32AA).L,D6
-	MOVEA.L	(_D2BEE).L,A0
+	MULU.W	(screen_line_bytes).L,D6
+	MOVEA.L	(screen).L,A0
 	ADDA.L	D6,A0
-_L0F5A:
-	MOVE.W	_B32AA(PC),D4
+.bottom_line1:
+	MOVE.W	screen_line_bytes(PC),D4
 	LSR.W	#1,D4
 	SUBQ.W	#1,D4
-_L0F62:
+.bottom_block1:
 	MOVE.W	D0,(A0)+
-	DBRA	D4,_L0F62
-	DBRA	D5,_L0F5A
-_L0F6C:
+	DBRA	D4,.bottom_block1
+	DBRA	D5,.bottom_line1
+.done1:
 	RTS
 
-_L0F6E:
+;	Calculates picture_start, the screen address of the picture's top left
+;	corner. Pictures smaller than the screen are centred.
+
+picture_position:
 	MOVEM.L	D0-D2/A0,-(A7)
-	MOVEA.L	_B32CC(PC),A0
+	MOVEA.L	format(PC),A0
 	MOVE.W	6(A0),D0
 	CMP.W	#$280,D0
-	BGE.S	_L0F92
+	BGE.S	.wide
 	NEG.W	D0
 	ADDI.W	#$280,D0
 	LSR.W	#1,D0
 	LSR.W	#4,D0
 	MULU.W	$A(A0),D0
 	ADD.W	D0,D0
-	BRA.S	_L0F94
-_L0F92:
+	BRA.S	.vertical
+.wide:
 	MOVEQ	#0,D0
-_L0F94:
+.vertical:
 	MOVE.W	8(A0),D1
 	CMP.W	#$1E0,D1
-	BGE.S	_L0FB4
+	BGE.S	.done
 	NEG.W	D1
 	ADDI.W	#$1E0,D1
 	LSR.W	#1,D1
-	MOVE.W	_B36E8(PC),D2
+	MOVE.W	screen_width(PC),D2
 	MULU.W	D2,D1
 	LSR.L	#3,D1
 	MULU.W	$A(A0),D1
 	ADD.L	D1,D0
-_L0FB4:
-	ADD.L	_D2BEE(PC),D0
-	MOVE.L	D0,(_B4F4E).L
+.done:
+	ADD.L	screen(PC),D0
+	MOVE.L	D0,(picture_start).L
 	MOVEM.L	(A7)+,D0-D2/A0
 	RTS
 
@@ -1421,34 +1497,34 @@ _L0FB4:
 ;	v1.2: rewritten together with the loader. Checks the file size, the
 ;	picture size and the bits per pixel, and accepts 32-bit pictures.
 
-_L0FC4:
-	MOVEA.L	_D2BEA(PC),A1
-	CMPI.L	#18,(_B32C4).L			; File size
-	BLO.W	_L01E0
+tga_header:
+	MOVEA.L	file_buffer(PC),A1
+	CMPI.L	#18,(file_size).L			; File size
+	BLO.W	exit
 	MOVE.B	2(A1),D0			; Image type: 2 = uncompressed,
 	ANDI.B	#$F7,D0				; 10 = RLE, true color
 	CMP.B	#2,D0
-	BNE.W	_L01E0
+	BNE.W	exit
 	MOVE.B	16(A1),D0			; Bits per pixel
 	CMP.B	#16,D0
-	BEQ.S	_L0FE0
+	BEQ.S	.size
 	CMP.B	#24,D0
-	BEQ.S	_L0FE0
+	BEQ.S	.size
 	CMP.B	#32,D0
-	BNE.W	_L01E0
-_L0FE0:
+	BNE.W	exit
+.size:
 	MOVE.W	$C(A1),D0			; Width, little endian
 	ROL.W	#8,D0
-	BEQ.W	_L01E0
+	BEQ.W	exit
 	CMP.W	#$7FF0,D0
-	BHI.W	_L01E0
-	MOVE.W	D0,(_D2708).L			; Real width
+	BHI.W	exit
+	MOVE.W	D0,(picture_width).L			; Real width
 	ADDI.W	#15,D0
 	ANDI.W	#$FFF0,D0
 	MOVE.W	D0,6(A0)			; Width rounded up to 16 pixels
 	MOVE.W	$E(A1),D0			; Height
 	ROL.W	#8,D0
-	BEQ.W	_L01E0
+	BEQ.W	exit
 	MOVE.W	D0,8(A0)
 	MOVE.W	#16,$A(A0)			; True color
 	RTS
@@ -1463,17 +1539,17 @@ _L0FE0:
 ;	own, with packets clipped to the picture, and then converted like
 ;	uncompressed ones. 32-bit pictures are shown without their alpha.
 
-_L100A:
-	BSR.W	_L0F6E				; Calculate screen position.
+tga_load:
+	BSR.W	picture_position				; Calculate screen position.
 	MOVEM.L	D2-D7/A2-A6,-(A7)
-	CLR.L	(TGA_BUFFER).L
-	MOVEA.L	_D2BEA(PC),A1
+	CLR.L	(tga_buffer).L
+	MOVEA.L	file_buffer(PC),A1
 	LEA	18(A1),A0
 	MOVEQ	#0,D0
 	MOVE.B	(A1),D0				; Skip the image ID.
 	ADDA.L	D0,A0
 	TST.B	1(A1)				; Skip the color map.
-	BEQ.S	_L1030
+	BEQ.S	.no_colour_map
 	MOVE.B	6(A1),D0			; Number of entries, little endian
 	LSL.W	#8,D0
 	MOVE.B	5(A1),D0
@@ -1483,17 +1559,17 @@ _L100A:
 	LSR.W	#3,D1
 	MULU.W	D1,D0
 	ADDA.L	D0,A0
-_L1030:
+.no_colour_map:
 	MOVEQ	#0,D7
-	MOVE.W	_D2708(PC),D7			; D7 = width
-	MOVEA.L	_B32CC(PC),A2
+	MOVE.W	picture_width(PC),D7			; D7 = width
+	MOVEA.L	format(PC),A2
 	MOVEQ	#0,D6
 	MOVE.W	8(A2),D6			; D6 = height
 	MOVEQ	#0,D5
 	MOVE.B	16(A1),D5
 	LSR.W	#3,D5				; D5 = bytes per pixel
 	CMPI.B	#10,2(A1)
-	BNE.S	_L1044
+	BNE.S	.convert
 
 	MOVE.L	D7,D4				; Unpack RLE into a buffer.
 	MULU.L	D6,D4
@@ -1503,104 +1579,106 @@ _L1030:
 	TRAP	#1
 	ADDQ.L	#6,A7
 	TST.L	D0
-	BEQ.W	TGA_FAIL
-	MOVE.L	D0,(TGA_BUFFER).L
+	BEQ.W	.fail
+	MOVE.L	D0,(tga_buffer).L
 	MOVEA.L	D0,A3
 	LEA	(A3,D4.L),A4			; A4 = end of buffer
 	MOVEA.L	A1,A5
-	ADDA.L	_B32C4(PC),A5			; A5 = end of file
+	ADDA.L	file_size(PC),A5			; A5 = end of file
 	SUBQ.W	#1,D5
-TGA_PACKET:
+.packet:
 	CMPA.L	A4,A3
-	BHS.S	TGA_UNPACKED
+	BHS.S	.unpacked
 	CMPA.L	A5,A0
-	BHS.S	TGA_UNPACKED
+	BHS.S	.unpacked
 	MOVEQ	#0,D0
 	MOVE.B	(A0)+,D0
 	BCLR	#7,D0
-	BNE.S	TGA_RUN
-TGA_RAW:					; D0 + 1 pixels follow.
+	BNE.S	.run
+.raw:					; D0 + 1 pixels follow.
 	MOVE.W	D5,D1
-TGA_RAWBYTE:
+.raw_byte:
 	MOVE.B	(A0)+,(A3)+
-	DBRA	D1,TGA_RAWBYTE
+	DBRA	D1,.raw_byte
 	CMPA.L	A4,A3
-	DBHS	D0,TGA_RAW
-	BRA.S	TGA_PACKET
-TGA_RUN:					; Next pixel D0 + 1 times
+	DBHS	D0,.raw
+	BRA.S	.packet
+.run:					; Next pixel D0 + 1 times
 	MOVEA.L	A0,A6
 	MOVE.W	D5,D1
-TGA_RUNBYTE:
+.run_byte:
 	MOVE.B	(A6)+,(A3)+
-	DBRA	D1,TGA_RUNBYTE
+	DBRA	D1,.run_byte
 	CMPA.L	A4,A3
-	DBHS	D0,TGA_RUN
+	DBHS	D0,.run
 	MOVEA.L	A6,A0
-	BRA.S	TGA_PACKET
-TGA_UNPACKED:
+	BRA.S	.packet
+.unpacked:
 	ADDQ.W	#1,D5
-	MOVEA.L	(TGA_BUFFER).L,A0
+	MOVEA.L	(tga_buffer).L,A0
 
-_L1044:						; Convert and copy to the screen.
-	MOVEA.L	_B4F4E(PC),A4			; A4 = screen line
+.convert:						; Convert and copy to the screen.
+	MOVEA.L	picture_start(PC),A4			; A4 = screen line
 	MOVEQ	#0,D3
-	MOVE.W	_B36E8(PC),D3
+	MOVE.W	screen_width(PC),D3
 	ADD.L	D3,D3				; D3 = bytes per screen line
 	BTST	#5,17(A1)			; Top-left origin?
-	BNE.S	_L106A
+	BNE.S	.top_down
 	MOVE.L	D6,D0				; No, start with the last line.
 	SUBQ.L	#1,D0
 	MULU.L	D3,D0
 	ADDA.L	D0,A4
 	NEG.L	D3
-_L106A:
+.top_down:
 	MOVE.W	6(A2),D4
 	SUB.W	D7,D4				; D4 = padding up to 16 pixels
-	LEA	TGA_LINE16(PC),A5
+	LEA	tga_line16(PC),A5
 	CMP.W	#2,D5
-	BEQ.S	_L1070
-	LEA	TGA_LINE24(PC),A5
+	BEQ.S	.lines
+	LEA	tga_line24(PC),A5
 	CMP.W	#3,D5
-	BEQ.S	_L1070
-	LEA	TGA_LINE32(PC),A5
-_L1070:
+	BEQ.S	.lines
+	LEA	tga_line32(PC),A5
+.lines:
 	SUBQ.W	#1,D6
-_L1076:
+.line:
 	MOVEA.L	A4,A3
 	MOVE.W	D7,D2
 	SUBQ.W	#1,D2
 	JSR	(A5)
 	MOVE.W	D4,D2
-	BRA.S	_L1096
-_L1090:
+	BRA.S	.pad_test
+.pad:
 	CLR.W	(A3)+
-_L1096:
-	DBRA	D2,_L1090
+.pad_test:
+	DBRA	D2,.pad
 	ADDA.L	D3,A4
-	DBRA	D6,_L1076
+	DBRA	D6,.line
 
-	BSR.S	TGA_FREE
+	BSR.S	tga_free
 	MOVEM.L	(A7)+,D2-D7/A2-A6
 	RTS
 
-TGA_FAIL:
-	BSR.S	TGA_FREE
-	BRA.W	_L01E0
+.fail:
+	BSR.S	tga_free
+	BRA.W	exit
 
-TGA_FREE:
-	MOVE.L	(TGA_BUFFER).L,D0
-	BEQ.S	TGA_FREED
-	CLR.L	(TGA_BUFFER).L
+;	Frees the RLE buffer.
+
+tga_free:
+	MOVE.L	(tga_buffer).L,D0
+	BEQ.S	.done
+	CLR.L	(tga_buffer).L
 	MOVE.L	D0,-(A7)
 	MOVE.W	#73,-(A7)			; Mfree
 	TRAP	#1
 	ADDQ.L	#6,A7
-TGA_FREED:
+.done:
 	RTS
 
 ;	Convert D2 + 1 pixels from A0 to RGB565 at A3.
 
-TGA_LINE16:					; 16 bits: ARRRRRGG GGGBBBBB, little endian
+tga_line16:					; 16 bits: ARRRRRGG GGGBBBBB, little endian
 	MOVEQ	#0,D0
 	MOVE.W	(A0)+,D0
 	ROL.W	#8,D0
@@ -1608,21 +1686,21 @@ TGA_LINE16:					; 16 bits: ARRRRRGG GGGBBBBB, little endian
 	ADD.W	D0,D0
 	ROL.L	#5,D0
 	MOVE.W	D0,(A3)+
-	DBRA	D2,TGA_LINE16
+	DBRA	D2,tga_line16
 	RTS
 
-TGA_LINE32:					; 32 bits: blue, green, red, alpha
-	BSR.S	TGA_PIXEL24
+tga_line32:					; 32 bits: blue, green, red, alpha
+	BSR.S	tga_pixel24
 	ADDQ.L	#1,A0
-	DBRA	D2,TGA_LINE32
+	DBRA	D2,tga_line32
 	RTS
 
-TGA_LINE24:					; 24 bits: blue, green, red
-	BSR.S	TGA_PIXEL24
-	DBRA	D2,TGA_LINE24
+tga_line24:					; 24 bits: blue, green, red
+	BSR.S	tga_pixel24
+	DBRA	D2,tga_line24
 	RTS
 
-TGA_PIXEL24:
+tga_pixel24:
 	MOVE.B	(A0)+,D0
 	ROR.L	#8,D0
 	MOVE.B	(A0)+,D0
@@ -1635,46 +1713,53 @@ TGA_PIXEL24:
 	MOVE.W	D0,(A3)+
 	RTS
 
-_L119C:
-	MOVEA.L	_D2BEA(PC),A1
+;	IndyPaint (.TRU): checks the "Indy" header and reads the size.
+
+tru_header:
+	MOVEA.L	file_buffer(PC),A1
 	CMPI.L	#'Indy',(A1)
-	BNE.W	_L01E0
-	MOVE.W	4(A1),(_D2708).L
+	BNE.W	exit
+	MOVE.W	4(A1),(picture_width).L
 	MOVE.W	4(A1),6(A0)
 	MOVE.W	6(A1),8(A0)
 	RTS
 
-_L11C0:
-	BSR.W	_L0F6E
-	MOVEA.L	_D2BEA(PC),A0
+;	IndyPaint loader: 16-bit pixels after a 256-byte header.
+
+tru_load:
+	BSR.W	picture_position
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$100(A0),A0
-	MOVEA.L	_B4F4E(PC),A1
-	MOVEA.L	_B32CC(PC),A2
+	MOVEA.L	picture_start(PC),A1
+	MOVEA.L	format(PC),A2
 	MOVE.W	8(A2),D5
 	SUBQ.W	#1,D5
 	MOVEQ	#0,D3
 	MOVE.W	6(A2),D4
 	CMP.W	#$280,D4
-	BGE.S	_L11EE
+	BGE.S	.wide
 	MOVE.W	#$280,D3
 	SUB.W	D4,D3
 	LSL.W	#1,D3
-_L11EE:
+.wide:
 	SUBQ.W	#1,D4
-_L11F0:
+.line:
 	MOVE.W	D4,D2
-_L11F2:
+.pixel:
 	MOVE.W	(A0)+,(A1)+
-	DBRA	D2,_L11F2
+	DBRA	D2,.pixel
 	ADDA.W	D3,A1
-	DBRA	D5,_L11F0
+	DBRA	D5,.line
 	RTS
 
-_L1200:
-	MOVEA.L	_D2BEA(PC),A1
+;	GIF header parser: skips the global palette and any extension blocks and
+;	reads the size from the image descriptor.
+
+gif_header:
+	MOVEA.L	file_buffer(PC),A1
 	LEA	$D(A1),A1
 	TST.B	-3(A1)
-	BPL.S	_L1222
+	BPL.S	.no_palette
 	MOVE.B	-3(A1),D0
 	ANDI.W	#7,D0
 	ADDQ.L	#1,D0
@@ -1682,32 +1767,32 @@ _L1200:
 	ROL.W	D0,D1
 	MULU.W	#3,D1
 	ADDA.W	D1,A1
-_L1222:						; v1.2: skip extension blocks,
-	MOVEA.L	_D2BEA(PC),A2			; GIF89a pictures often have them
-	ADDA.L	_B32C4(PC),A2			; A2 = end of file
-GIF_BLOCK:
+.no_palette:						; v1.2: skip extension blocks,
+	MOVEA.L	file_buffer(PC),A2			; GIF89a pictures often have them
+	ADDA.L	file_size(PC),A2			; A2 = end of file
+.block:
 	CMPA.L	A2,A1
-	BHS.W	_L01E0
+	BHS.W	exit
 	CMPI.B	#$21,(A1)			; Extension
-	BNE.S	GIF_DESCRIPTOR
+	BNE.S	.descriptor
 	ADDQ.L	#2,A1
-GIF_SUBBLOCK:
+.subblock:
 	CMPA.L	A2,A1
-	BHS.W	_L01E0
+	BHS.W	exit
 	MOVEQ	#0,D0
 	MOVE.B	(A1)+,D0
-	BEQ.S	GIF_BLOCK
+	BEQ.S	.block
 	ADDA.L	D0,A1
-	BRA.S	GIF_SUBBLOCK
-GIF_DESCRIPTOR:
+	BRA.S	.subblock
+.descriptor:
 	CMPI.B	#$2C,(A1)			; Image descriptor
-	BNE.W	_L01E0
+	BNE.W	exit
 	BTST	#6,9(A1)			; Interlaced
-	SNE	(GIF_INTERLACED).L
+	SNE	(gif_interlaced).L
 	MOVE.B	6(A1),D0
 	LSL.W	#8,D0
 	MOVE.B	5(A1),D0
-	MOVE.W	D0,(_D2708).L
+	MOVE.W	D0,(picture_width).L
 	ADDI.W	#15,D0
 	ANDI.W	#$FFF0,D0
 	MOVE.W	D0,6(A0)
@@ -1716,142 +1801,154 @@ GIF_DESCRIPTOR:
 	MOVE.B	(A1)+,8(A0)
 	RTS
 
-_L124A:
-	BSR.W	_L0F6E
+;	GIF loader: unpacks the picture with gif_unpack and converts it to
+;	bitplanes line by line.
+
+gif_load:
+	BSR.W	picture_position
 	MOVEM.L	D2-D7/A2-A4,-(A7)		; v1.2
-	MOVE.W	_B36E8(PC),D0
-	MULU.W	_B36EA(PC),D0
-	MOVE.W	_D2708(PC),D1
-	MOVEA.L	_B32CC(PC),A0
+	MOVE.W	screen_width(PC),D0
+	MULU.W	screen_height(PC),D0
+	MOVE.W	picture_width(PC),D1
+	MOVEA.L	format(PC),A0
 	MULU.W	8(A0),D1
 	SUB.L	D1,D0
-	ADD.L	_D2BEE(PC),D0
-	MOVE.L	D0,(_D2FFA).L
-	CLR.L	(GIF_BUFFER).L
-	TST.B	(GIF_INTERLACED).L		; v1.2: interlaced pictures are
-	BEQ.S	GIF_UNPACK			; unpacked into a buffer of their
+	ADD.L	screen(PC),D0
+	MOVE.L	D0,(gif_pixels).L
+	CLR.L	(gif_buffer).L
+	TST.B	(gif_interlaced).L		; v1.2: interlaced pictures are
+	BEQ.S	.unpack			; unpacked into a buffer of their
 	MOVE.L	D1,-(A7)			; own, as the lines are converted
 	MOVE.W	#72,-(A7)			; out of order and could overwrite
 	TRAP	#1				; lines not converted yet.
 	ADDQ.L	#6,A7				; Malloc
 	TST.L	D0
-	BEQ.W	_L01E0
-	MOVE.L	D0,(GIF_BUFFER).L
-	MOVE.L	D0,(_D2FFA).L
-GIF_UNPACK:
-	MOVE.L	#_D2FFE,(_B4F52).L
-	BSR.W	_L12DC
+	BEQ.W	exit
+	MOVE.L	D0,(gif_buffer).L
+	MOVE.L	D0,(gif_pixels).L
+.unpack:
+	MOVE.L	#gif_info,(gif_info_ptr).L
+	BSR.W	gif_unpack
 	TST.W	D0
-	BMI.W	_L12DA
-	BSR.W	_L1720
-	LEA	_B374E(PC),A0
+	BMI.W	.free
+	BSR.W	make_c2p_tables
+	LEA	line_buffer(PC),A0
 	MOVEQ	#0,D0
 	MOVE.W	#$5FF,D1
-_L128C:
+.clear_line:
 	MOVE.L	D0,(A0)+
-	DBRA	D1,_L128C
+	DBRA	D1,.clear_line
 
 ;	v1.2: Version 1.1 converted as many lines as the screen has, reading
 ;	past the unpacked picture and writing past the screen for pictures
 ;	lower than the screen, converted whole screen lines (overwriting the
 ;	start of the next line), and ignored interlacing.
 
-	MOVE.W	_D3008(PC),D0
+	MOVE.W	gif_info+10(PC),D0
 	SUBQ.L	#1,D0				; D0 = width - 1
-	MOVEA.L	_D2FFA(PC),A0
-	MOVEA.L	_B4F4E(PC),A2			; A2 = first screen line
+	MOVEA.L	gif_pixels(PC),A0
+	MOVEA.L	picture_start(PC),A2			; A2 = first screen line
 	MOVEQ	#0,D4
-	MOVE.W	_B36E8(PC),D4			; D4 = bytes per screen line
-	MOVEA.L	_B32CC(PC),A3
+	MOVE.W	screen_width(PC),D4			; D4 = bytes per screen line
+	MOVEA.L	format(PC),A3
 	MOVE.W	6(A3),D3			; Width rounded up to 16 pixels
 	LSR.W	#4,D3
-	MOVE.W	D3,(_B8F62).L
+	MOVE.W	D3,(c2p_blocks).L
 	MOVEQ	#0,D7
 	MOVE.W	8(A3),D7			; D7 = height
 	MOVE.L	D7,D2
 	SUBQ.W	#1,D2
-	MOVE.L	#_B374E,D3
-	LEA	GIF_PASSES(PC),A4		; Line order
-	TST.B	(_D2FFE+15).L			; Interlaced?
-	BEQ.S	GIF_ORDER
+	MOVE.L	#line_buffer,D3
+	LEA	.passes(PC),A4		; Line order
+	TST.B	(gif_info+15).L			; Interlaced?
+	BEQ.S	.order
 	ADDQ.L	#8,A4
-GIF_ORDER:
+.order:
 	MOVE.W	(A4)+,D5			; D5 = screen line
 	MOVE.W	(A4)+,D6			; D6 = step
-_L12BA:
+.line:
 	MOVE.W	D0,D1
 	MOVEA.L	D3,A1
-_L12BE:
+.copy:
 	MOVE.B	(A0)+,(A1)+
-	DBRA	D1,_L12BE
-	MOVE.L	D3,(_B8F5A).L
+	DBRA	D1,.copy
+	MOVE.L	D3,(c2p_source).L
 	MOVE.L	D5,D1
 	MULU.L	D4,D1
 	ADD.L	A2,D1
-	MOVE.L	D1,(_B8F5E).L
-	BSR.W	_L17E2
+	MOVE.L	D1,(c2p_dest).L
+	BSR.W	c2p_line
 	ADD.W	D6,D5
-GIF_NEXTPASS:
+.next_pass:
 	CMP.W	D7,D5
-	BLO.S	GIF_NEXTLINE
+	BLO.S	.next_line
 	TST.W	(A4)				; Last pass done?
-	BMI.S	GIF_NEXTLINE
+	BMI.S	.next_line
 	MOVE.W	(A4)+,D5
 	MOVE.W	(A4)+,D6
-	BRA.S	GIF_NEXTPASS
-GIF_NEXTLINE:
-	DBRA	D2,_L12BA
-_L12DA:
-	MOVE.L	(GIF_BUFFER).L,D0
-	BEQ.S	GIF_DONE
-	CLR.L	(GIF_BUFFER).L
+	BRA.S	.next_pass
+.next_line:
+	DBRA	D2,.line
+.free:
+	MOVE.L	(gif_buffer).L,D0
+	BEQ.S	.done
+	CLR.L	(gif_buffer).L
 	MOVE.L	D0,-(A7)
 	MOVE.W	#73,-(A7)			; Mfree
 	TRAP	#1
 	ADDQ.L	#6,A7
-GIF_DONE:
+.done:
 	MOVEM.L	(A7)+,D2-D7/A2-A4
 	RTS
 
 ;	First line and step of each pass, ended by -1.
 
-GIF_PASSES:
+.passes:
 	dc.w	0,1,-1,0			; Not interlaced
 	dc.w	0,8,4,8,2,4,1,2,-1,0		; Interlaced
 
-_L12DC:
+;	Unpacks the GIF in file_buffer to gif_pixels, one byte per pixel, and
+;	copies the descriptors to gif_info. Returns D0 = -1 if it isn't a GIF.
+;	The GIF depacker (gif_unpack to lzw_decode) is from TurboGIF by Sascha
+;	Springer.
+
+gif_unpack:
 	MOVEM.L	D3-D7/A2-A6,-(A7)
-	MOVEA.L	_D2BEA(PC),A0
-	LEA	_B474E(PC),A1
-	BSR.S	_L131C
+	MOVEA.L	file_buffer(PC),A0
+	LEA	gif_parsed(PC),A1
+	BSR.S	gif_parse
 	TST.W	D0
-	BMI.S	_L1316
-	MOVEA.L	_D2BEA(PC),A1
-	BSR.W	_L1432
-	MOVEA.L	_D2BEA(PC),A0
-	MOVEA.L	_D2FFA(PC),A1
-	BSR.W	_L1446
-	LEA	_B474E(PC),A0
-	MOVEA.L	_B4F52(PC),A1
+	BMI.S	.done
+	MOVEA.L	file_buffer(PC),A1
+	BSR.W	gif_join_blocks
+	MOVEA.L	file_buffer(PC),A0
+	MOVEA.L	gif_pixels(PC),A1
+	BSR.W	lzw_decode
+	LEA	gif_parsed(PC),A0
+	MOVEA.L	gif_info_ptr(PC),A1
 	MOVE.L	(A0)+,(A1)+
 	MOVE.L	(A0)+,(A1)+
 	MOVE.L	(A0)+,(A1)+
 	MOVE.L	(A0)+,(A1)+
 	MOVE.B	(A0)+,(A1)+
 	CLR.W	D0
-_L1316:
+.done:
 	MOVEM.L	(A7)+,D3-D7/A2-A6
 	RTS
 
-_L131C:
+;	Reads the screen and image descriptors of the GIF at A0 into A1 and the
+;	palettes into palette. Returns D0 = -1 if it isn't a GIF, else A0 = the
+;	image data.
+
+gif_parse:
 	MOVEQ	#-1,D0
 	CMPI.L	#'GIF8',(A0)+
-	BNE.W	_L1430
+	BNE.W	.done
 	CMPI.W	#$3761,(A0)+
-	BEQ.S	_L1338
+	BEQ.S	.version_ok
 	CMPI.W	#$3961,-2(A0)
-	BNE.W	_L1430
-_L1338:
+	BNE.W	.done
+.version_ok:
 	MOVE.B	1(A0),D0
 	LSL.W	#8,D0
 	MOVE.B	(A0),D0
@@ -1872,33 +1969,33 @@ _L1338:
 	ADDQ.W	#7,A0
 	MOVE.B	-3(A0),D0
 	ANDI.B	#128,D0
-	BEQ.S	_L138E
-	LEA	PALETTE0(PC),A2
+	BEQ.S	.no_global_palette
+	LEA	palette(PC),A2
 	MOVEQ	#1,D0
 	MOVE.B	-2(A1),D1
 	LSL.W	D1,D0
 	SUBQ.W	#1,D0
-_L1382:
+.global_colour:
 	MOVE.B	(A0)+,(A2)+
 	MOVE.B	(A0)+,(A2)+
 	CLR.B	(A2)+
 	MOVE.B	(A0)+,(A2)+
-	DBRA	D0,_L1382
-_L138E:
+	DBRA	D0,.global_colour
+.no_global_palette:
 	CLR.W	D0
-_L1390:
+.skip_extension:
 	CMPI.B	#33,(A0)
-	BNE.S	_L13A0
+	BNE.S	.descriptor
 	ADDQ.W	#2,A0
-_L1398:
+.skip_subblock:
 	MOVE.B	(A0)+,D0
-	BEQ.S	_L1390
+	BEQ.S	.skip_extension
 	ADDA.W	D0,A0
-	BRA.S	_L1398
-_L13A0:
+	BRA.S	.skip_subblock
+.descriptor:
 	MOVEQ	#-1,D0
 	CMPI.B	#44,(A0)
-	BNE.W	_L1430
+	BNE.W	.done
 	MOVE.B	2(A0),D0
 	LSL.W	#8,D0
 	MOVE.B	1(A0),D0
@@ -1926,49 +2023,54 @@ _L13A0:
 	SNE	(A1)+
 	LEA	$A(A0),A0
 	TST.B	-1(A1)
-	BEQ.S	_L141C
-	LEA	PALETTE0(PC),A2
+	BEQ.S	.no_local_palette
+	LEA	palette(PC),A2
 	MOVEQ	#1,D0
 	MOVE.B	-3(A1),D1
 	LSL.W	D1,D0
 	SUBQ.W	#1,D0
-_L1410:
+.local_colour:
 	MOVE.B	(A0)+,(A2)+
 	MOVE.B	(A0)+,(A2)+
 	CLR.B	(A2)+
 	MOVE.B	(A0)+,(A2)+
-	DBRA	D0,_L1410
-_L141C:
+	DBRA	D0,.local_colour
+.no_local_palette:
 	CLR.W	D0
-_L141E:
+.skip_extension2:
 	CMPI.B	#33,(A0)
-	BNE.S	_L142E
+	BNE.S	.ok
 	ADDQ.W	#2,A0
-_L1426:
+.skip_subblock2:
 	MOVE.B	(A0)+,D0
-	BEQ.S	_L141E
+	BEQ.S	.skip_extension2
 	ADDA.W	D0,A0
-	BRA.S	_L1426
-_L142E:
+	BRA.S	.skip_subblock2
+.ok:
 	MOVEQ	#0,D0
-_L1430:
+.done:
 	RTS
 
-_L1432:
+;	Joins the data sub-blocks at A0 into one stream at A1.
+
+gif_join_blocks:
 	MOVE.B	(A0)+,(A1)+
-_L1434:
+.block:
 	CLR.W	D0
 	MOVE.B	(A0)+,D0
-	BEQ.S	_L1444
+	BEQ.S	.done
 	SUBQ.W	#1,D0
-_L143C:
+.copy:
 	MOVE.B	(A0)+,(A1)+
-	DBRA	D0,_L143C
-	BRA.S	_L1434
-_L1444:
+	DBRA	D0,.copy
+	BRA.S	.block
+.done:
 	RTS
 
-_L1446:
+;	LZW decoder. A0 = code size and data, A1 = output (one byte per pixel).
+;	Uses work_tables for the string table and line_buffer as stack.
+
+lzw_decode:
 	CLR.W	D4
 	MOVE.B	(A0)+,D4
 	MOVEQ	#1,D1
@@ -1987,10 +2089,10 @@ _L1446:
 	SWAP	D1
 	CLR.W	D3
 	MOVEQ	#-1,D5
-	LEA	_B4F56(PC),A2
-	LEA	_B374E(PC),A5
+	LEA	work_tables(PC),A2
+	LEA	line_buffer(PC),A5
 	LEA	1(A5),A6
-_L1476:
+.code:
 	MOVE.B	2(A0),D0
 	SWAP	D0
 	MOVE.B	1(A0),D0
@@ -2004,7 +2106,7 @@ _L1476:
 	ADDA.W	D6,A0
 	ANDI.W	#7,D3
 	CMP.W	A3,D0
-	BNE.S	_L14AC
+	BNE.S	.not_clear
 	SWAP	D1
 	MOVE.W	D1,D4
 	SWAP	D1
@@ -2014,180 +2116,187 @@ _L1476:
 	SUBQ.W	#1,D2
 	MOVE.W	A4,D1
 	ADDQ.W	#1,D1
-	BRA.S	_L1476
-_L14AC:
+	BRA.S	.code
+.not_clear:
 	CMP.W	A4,D0
-	BEQ.S	_L1502
-	BGT.S	_L14BE
+	BEQ.S	.end
+	BGT.S	.string
 	MOVE.W	D0,(A2,D1.W*4)
 	MOVE.W	D0,-2(A2,D1.W*4)
 	MOVE.B	D0,(A1)+
-	BRA.S	_L14EA
-_L14BE:
+	BRA.S	.next
+.string:
 	MOVE.W	D0,(A2,D1.W*4)
 	MOVE.W	D0,D6
 	ADDQ.W	#1,D6
-_L14C6:
+.push:
 	MOVE.B	3(A2,D0.W*4),(A5)+
 	MOVE.W	(A2,D0.W*4),D0
 	CMP.W	A4,D0
-	BGT.S	_L14C6
+	BGT.S	.push
 	MOVE.L	A5,D5
 	SUB.L	A6,D5
 	MOVE.W	D0,-2(A2,D1.W*4)
 	MOVE.B	D0,(A1)+
-_L14DC:
+.pop:
 	MOVE.B	-(A5),(A1)+
-	DBRA	D5,_L14DC
+	DBRA	D5,.pop
 	CMP.W	D1,D6
-	BNE.S	_L14EA
+	BNE.S	.next
 	MOVE.B	D0,-1(A1)
-_L14EA:
+.next:
 	ADDQ.W	#1,D1
 	CMP.W	D7,D1
-	BLE.S	_L1476
+	BLE.S	.code
 	CMP.W	#12,D4
-	BEQ.S	_L1476
+	BEQ.S	.code
 	ADD.W	D7,D7
 	ADDQ.W	#1,D4
 	MOVE.W	D7,D2
 	SUBQ.W	#1,D2
-	BRA.W	_L1476
-_L1502:
+	BRA.W	.code
+.end:
 	RTS
 
-_L1504:
-	MOVE.L	#-1,(PALETTE0).L
-	CLR.L	(_D2BF6).L
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
-	MOVEA.L	_D2BEA(PC),A0
+;	MacPaint: 576 x 720 pixels, PackBits lines after a 512-byte header.
+
+macpaint_load:
+	MOVE.L	#-1,(palette).L
+	CLR.L	(palette+4).L
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$200(A0),A0
 	MOVE.W	#$2CF,D6
-_L1528:
+.line:
 	MOVE.L	A1,D7
 	ADDI.L	#72,D7
-	BSR.W	_L1F86
+	BSR.W	unpack_packbits
 	ADDQ.L	#8,A1
-	DBRA	D6,_L1528
+	DBRA	D6,.line
 	RTS
 
-_L153C:
-	MOVEA.L	_D2BEA(PC),A1
+;	IFF ILBM header parser: size and depth from the BMHD chunk.
+
+iff_header:
+	MOVEA.L	file_buffer(PC),A1
 	CMPI.L	#'ILBM',8(A1)
-	BNE.S	_L1588
+	BNE.S	.unsupported
 	LEA	$C(A1),A1
-_L154E:
+.find_bmhd:
 	CMPI.L	#'BMHD',(A1)
-	BEQ.S	_L155E
+	BEQ.S	.bmhd
 	ADDA.L	4(A1),A1
 	ADDQ.L	#8,A1
-	BRA.S	_L154E
-_L155E:
-	MOVE.L	A1,(_B8F56).L
+	BRA.S	.find_bmhd
+.bmhd:
+	MOVE.L	A1,(iff_bmhd).L
 	MOVE.W	8(A1),6(A0)
 	MOVE.W	$A(A1),8(A0)
 	MOVE.B	$10(A1),D0
 	CMP.B	#2,D0
-	BLE.S	_L15A6
-	BEQ.S	_L159E
+	BLE.S	.planes1
+	BEQ.S	.planes2
 	CMP.B	#4,D0
-	BLE.S	_L1596
+	BLE.S	.planes4
 	CMP.B	#8,D0
-	BLE.S	_L158E
-_L1588:
+	BLE.S	.planes8
+.unsupported:
 	CLR.W	$A(A0)
 	RTS
 
-_L158E:
+.planes8:
 	MOVE.W	#8,$A(A0)
 	RTS
 
-_L1596:
+.planes4:
 	MOVE.W	#4,$A(A0)
 	RTS
 
-_L159E:
+.planes2:
 	MOVE.W	#2,$A(A0)
 	RTS
 
-_L15A6:
+.planes1:
 	MOVE.W	#1,$A(A0)
 	RTS
 
-_L15AE:
-	MOVEA.L	_D2BEA(PC),A0
+;	IFF ILBM loader: palette from CMAP, then the lines of BODY (packed or not)
+;	through the line routine for the number of planes.
+
+iff_load:
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$C(A0),A0
-_L15B6:
+.find_cmap:
 	CMPI.L	#'CMAP',(A0)
-	BEQ.S	_L15C6
+	BEQ.S	.cmap
 	ADDA.L	4(A0),A0
 	ADDQ.L	#8,A0
-	BRA.S	_L15B6
-_L15C6:
+	BRA.S	.find_cmap
+.cmap:
 	ADDQ.L	#4,A0
 	MOVE.L	(A0)+,D0
 	DIVU.W	#3,D0
 	SUBQ.L	#1,D0
-	LEA	PALETTE0(PC),A1
-_L15D4:
+	LEA	palette(PC),A1
+.colour:
 	MOVE.B	(A0)+,(A1)+
 	MOVE.B	(A0)+,(A1)+
 	ADDQ.L	#1,A1
 	MOVE.B	(A0)+,(A1)+
-	DBRA	D0,_L15D4
-	MOVEA.L	_D2BEA(PC),A0
+	DBRA	D0,.colour
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$C(A0),A0
-_L15E8:
+.find_body:
 	CMPI.L	#'BODY',(A0)
-	BEQ.S	_L15F8
+	BEQ.S	.body
 	ADDA.L	4(A0),A0
 	ADDQ.L	#8,A0
-	BRA.S	_L15E8
-_L15F8:
+	BRA.S	.find_body
+.body:
 	ADDQ.L	#8,A0
-	BSR.W	_L0F6E
-	MOVE.L	_B4F4E(PC),(_D3074).L
-	MOVEA.L	_B32CC(PC),A3
-	MOVE.W	_B36E8(PC),D3
+	BSR.W	picture_position
+	MOVE.L	picture_start(PC),(line_dest).L
+	MOVEA.L	format(PC),A3
+	MOVE.W	screen_width(PC),D3
 	LSR.W	#3,D3
-	MULU.W	_B36EC(PC),D3
-	MOVE.L	D3,(_D3070).L
+	MULU.W	screen_planes(PC),D3
+	MOVE.L	D3,(line_step).L
 	MOVE.W	8(A3),D4
 	SUBQ.W	#1,D4
 	MOVE.W	6(A3),D5
 	LSR.W	#4,D5
 	SUBQ.W	#1,D5
 	MOVEQ	#0,D0
-	MOVEA.L	(_B8F56).L,A2
+	MOVEA.L	(iff_bmhd).L,A2
 	MOVE.B	$10(A2),D0
-	LEA	_D3010(PC),A5
+	LEA	line_routines(PC),A5
 	MOVE.L	-4(A5,D0.W*4),D0
-	BEQ.S	_L166A
+	BEQ.S	.done
 	MOVEA.L	D0,A5
 	MOVEQ	#0,D0
 	MOVE.W	6(A3),D2
 	LSR.W	#3,D2
-	MOVE.L	D2,(_D307C).L
+	MOVE.L	D2,(plane_bytes).L
 	MOVE.B	$10(A2),D0
 	MULU.W	D0,D2
 	TST.B	$12(A2)
-	BEQ.S	_L166C
-_L1658:
-	LEA	_B374E(PC),A1
+	BEQ.S	.raw_line
+.packed_line:
+	LEA	line_buffer(PC),A1
 	MOVE.L	A1,D7
 	ADD.L	D2,D7
-	BSR.W	_L1F86
+	BSR.W	unpack_packbits
 	JSR	(A5)
-	DBRA	D4,_L1658
-_L166A:
+	DBRA	D4,.packed_line
+.done:
 	RTS
 
-_L166C:
-	MOVE.L	A0,(_D3078).L
+.raw_line:
+	MOVE.L	A0,(line_source).L
 	JSR	(A5)
 	ADDA.L	D2,A0
-	DBRA	D4,_L166C
+	DBRA	D4,.raw_line
 	RTS
 
 LELONG	MACRO					; Read little endian long \1 to \2.
@@ -2203,38 +2312,38 @@ LELONG	MACRO					; Read little endian long \1 to \2.
 ;	an uncompressed 256-colour Windows BMP that fits in the file, reads
 ;	the 32-bit width and height and allows top-down pictures.
 
-_L167C:
-	MOVEA.L	(_D2BEA).L,A1
-	CMPI.L	#54,(_B32C4).L			; File size
-	BLO.W	_L01E0
+bmp_header:
+	MOVEA.L	(file_buffer).L,A1
+	CMPI.L	#54,(file_size).L			; File size
+	BLO.W	exit
 	CMPI.W	#'BM',(A1)
-	BNE.W	_L01E0
+	BNE.W	exit
 	LELONG	14(A1),D0			; Info header size
 	CMP.L	#40,D0
-	BLO.W	_L01E0
+	BLO.W	exit
 	CMPI.W	#$0800,28(A1)			; 8 bits per pixel
-	BNE.W	_L01E0
+	BNE.W	exit
 	TST.L	30(A1)				; Not compressed
-	BNE.W	_L01E0
+	BNE.W	exit
 	LELONG	18(A1),D0			; Width
 	TST.L	D0
-	BEQ.W	_L01E0
+	BEQ.W	exit
 	CMP.L	#$7FF0,D0
-	BHI.W	_L01E0
-	MOVE.W	D0,(_D2708).L			; Real width
+	BHI.W	exit
+	MOVE.W	D0,(picture_width).L			; Real width
 	MOVE.L	D0,D2
 	ADDI.W	#15,D0
 	ANDI.W	#$FFF0,D0
 	MOVE.W	D0,6(A0)			; Width rounded up to 16 pixels
 	LELONG	22(A1),D1			; Height, negative if top-down
-	SMI	(BMP_TOPDOWN).L
-	BPL.S	BMP_BOTTOMUP
+	SMI	(bmp_top_down).L
+	BPL.S	.bottom_up
 	NEG.L	D1
-BMP_BOTTOMUP:
+.bottom_up:
 	TST.L	D1
-	BEQ.W	_L01E0
+	BEQ.W	exit
 	CMP.L	#$7FFF,D1
-	BHI.W	_L01E0
+	BHI.W	exit
 	MOVE.W	D1,8(A0)
 	MOVE.W	#8,$A(A0)
 	ADDQ.L	#3,D2				; Lines are padded to 4 bytes.
@@ -2242,9 +2351,9 @@ BMP_BOTTOMUP:
 	MULU.L	D1,D2
 	LELONG	10(A1),D0			; Offset of the pixels
 	ADD.L	D0,D2
-	BCS.W	_L01E0
-	CMP.L	(_B32C4).L,D2			; Pixels must fit in the file.
-	BHI.W	_L01E0
+	BCS.W	exit
+	CMP.L	(file_size).L,D2			; Pixels must fit in the file.
+	BHI.W	exit
 	RTS
 
 ;	BMP loader.
@@ -2255,118 +2364,121 @@ BMP_BOTTOMUP:
 ;	other widths), assumed the palette right after a 40-byte info header
 ;	and read only the low word of the pixel offset.
 
-_L16A2:
-	BSR.W	_L1720
+bmp_load:
+	BSR.W	make_c2p_tables
 	MOVEM.L	D2-D7/A2-A3,-(A7)
-	MOVEA.L	_D2BEA(PC),A1
+	MOVEA.L	file_buffer(PC),A1
 	LELONG	14(A1),D0			; Palette after the info header
 	LEA	14(A1,D0.L),A0
 	LELONG	46(A1),D1			; Colours used, 0 = all
 	SUBQ.L	#1,D1
 	CMP.L	#255,D1
-	BLS.S	BMP_COLOURS
+	BLS.S	.colours
 	MOVE.L	#255,D1
-BMP_COLOURS:
-	LEA	PALETTE0(PC),A2
-_L16B4:						; Blue, green, red, 0
+.colours:
+	LEA	palette(PC),A2
+.colour:						; Blue, green, red, 0
 	MOVE.B	2(A0),(A2)+			; to red, green, 0, blue
 	MOVE.B	1(A0),(A2)+
 	CLR.B	(A2)+
 	MOVE.B	(A0),(A2)+
 	ADDQ.L	#4,A0
-	DBRA	D1,_L16B4
+	DBRA	D1,.colour
 
-	BSR.W	_L0F6E				; Calculate screen position.
-	LEA	_B374E(PC),A0			; Clear the line buffer, so the
+	BSR.W	picture_position				; Calculate screen position.
+	LEA	line_buffer(PC),A0			; Clear the line buffer, so the
 	MOVE.W	#$5FF,D1			; padding up to 16 pixels is
-_L16E0:						; colour 0.
+.clear_line:						; colour 0.
 	CLR.L	(A0)+
-	DBRA	D1,_L16E0
-	MOVEA.L	_B32CC(PC),A0
+	DBRA	D1,.clear_line
+	MOVEA.L	format(PC),A0
 	MOVE.W	6(A0),D1
 	LSR.W	#4,D1
-	MOVE.W	D1,(_B8F62).L
+	MOVE.W	D1,(c2p_blocks).L
 	MOVEQ	#0,D6
 	MOVE.W	8(A0),D6			; D6 = height
 	MOVEQ	#0,D7
-	MOVE.W	_D2708(PC),D7			; D7 = width
+	MOVE.W	picture_width(PC),D7			; D7 = width
 	MOVE.L	D7,D5
 	ADDQ.L	#3,D5
 	ANDI.W	#$FFFC,D5			; D5 = bytes per BMP line
 	MOVEQ	#0,D2
-	MOVE.W	_B36E8(PC),D2
+	MOVE.W	screen_width(PC),D2
 	LSR.W	#4,D2
 	ADD.W	D2,D2
-	MULU.W	_B36EC(PC),D2			; D2 = bytes per screen line
+	MULU.W	screen_planes(PC),D2			; D2 = bytes per screen line
 	LELONG	10(A1),D0
 	LEA	(A1,D0.L),A2			; A2 = pixels
-	MOVEA.L	_B4F4E(PC),A3			; A3 = screen line
-	TST.B	(BMP_TOPDOWN).L
-	BNE.S	_L16F8
+	MOVEA.L	picture_start(PC),A3			; A3 = screen line
+	TST.B	(bmp_top_down).L
+	BNE.S	.top_down
 	MOVE.L	D6,D0				; Bottom-up: start with the
 	SUBQ.L	#1,D0				; last screen line.
 	MULU.L	D2,D0
 	ADDA.L	D0,A3
 	NEG.L	D2
-_L16F8:
+.top_down:
 	SUBQ.W	#1,D6
-_L170E:
+.line:
 	MOVEA.L	A2,A0
-	LEA	_B374E(PC),A1
+	LEA	line_buffer(PC),A1
 	MOVE.W	D7,D0
 	SUBQ.W	#1,D0
-_L1712:
+.copy:
 	MOVE.B	(A0)+,(A1)+
-	DBRA	D0,_L1712
-	PEA	_B374E(PC)
-	MOVE.L	(A7)+,(_B8F5A).L
-	MOVE.L	A3,(_B8F5E).L
-	BSR.W	_L17E2
+	DBRA	D0,.copy
+	PEA	line_buffer(PC)
+	MOVE.L	(A7)+,(c2p_source).L
+	MOVE.L	A3,(c2p_dest).L
+	BSR.W	c2p_line
 	ADDA.L	D5,A2
 	ADDA.L	D2,A3
-	DBRA	D6,_L170E
+	DBRA	D6,.line
 	MOVEM.L	(A7)+,D2-D7/A2-A3
 	RTS
 
-_L1720:
+;	Makes the tables for c2p_line in work_tables: for each of the 8 pixels of
+;	a byte group and each colour, the colour's bits in 8 bitplanes.
+
+make_c2p_tables:
 	MOVEM.L	D0-D3/A0,-(A7)
-	LEA	_B5756(PC),A0
+	LEA	work_tables+2048(PC),A0
 	MOVE.W	#$FF,D3
-_L172C:
+.entry:
 	MOVEQ	#0,D1
 	MOVEQ	#0,D2
 	BTST.L	#0,D3
-	BEQ.S	_L173A
+	BEQ.S	.bit1
 	BSET.L	#31,D1
-_L173A:
+.bit1:
 	BTST.L	#1,D3
-	BEQ.S	_L1744
+	BEQ.S	.bit2
 	BSET.L	#23,D1
-_L1744:
+.bit2:
 	BTST.L	#2,D3
-	BEQ.S	_L174E
+	BEQ.S	.bit3
 	BSET.L	#15,D1
-_L174E:
+.bit3:
 	BTST.L	#3,D3
-	BEQ.S	_L1758
+	BEQ.S	.bit4
 	BSET.L	#7,D1
-_L1758:
+.bit4:
 	BTST.L	#4,D3
-	BEQ.S	_L1762
+	BEQ.S	.bit5
 	BSET.L	#31,D2
-_L1762:
+.bit5:
 	BTST.L	#5,D3
-	BEQ.S	_L176C
+	BEQ.S	.bit6
 	BSET.L	#23,D2
-_L176C:
+.bit6:
 	BTST.L	#6,D3
-	BEQ.S	_L1776
+	BEQ.S	.bit7
 	BSET.L	#15,D2
-_L1776:
+.bit7:
 	BTST.L	#7,D3
-	BEQ.S	_L1780
+	BEQ.S	.store
 	BSET.L	#7,D2
-_L1780:
+.store:
 	MOVE.L	D2,-(A0)
 	MOVE.L	D1,-(A0)
 	LSR.L	#1,D1
@@ -2397,23 +2509,26 @@ _L1780:
 	LSR.L	#1,D2
 	MOVE.L	D1,$3800(A0)
 	MOVE.L	D2,$3804(A0)
-	DBRA	D3,_L172C
+	DBRA	D3,.entry
 	MOVEM.L	(A7)+,D0-D3/A0
 	RTS
 
-_L17E2:
+;	Converts c2p_blocks x 16 pixels (one byte each) from c2p_source to 8
+;	interleaved bitplanes at c2p_dest.
+
+c2p_line:
 	MOVEM.L	D0-D4/A0-A5,-(A7)
-	MOVEA.L	_B8F5A(PC),A0
-	LEA	_B4F56(PC),A1
-	MOVEA.L	_B8F5E(PC),A2
+	MOVEA.L	c2p_source(PC),A0
+	LEA	work_tables(PC),A1
+	MOVEA.L	c2p_dest(PC),A2
 	LEA	$1000(A1),A3
 	LEA	$1000(A3),A4
 	LEA	$1000(A4),A5
-	MOVE.W	_B8F62(PC),D4
+	MOVE.W	c2p_blocks(PC),D4
 	SUBQ.L	#1,D4
 	MOVEQ	#0,D0
 	MOVE.W	#$100,D3
-_L180A:
+.block:
 	MOVE.B	(A0)+,D0
 	MOVE.L	(A1,D0.W*8),D1
 	MOVE.L	4(A1,D0.W*8),D2
@@ -2467,110 +2582,120 @@ _L180A:
 	MOVEP.L	D1,1(A2)
 	MOVEP.L	D2,9(A2)
 	LEA	$10(A2),A2
-	DBRA	D4,_L180A
-	MOVE.L	A0,(_B8F5A).L
-	MOVE.L	A2,(_B8F5E).L
+	DBRA	D4,.block
+	MOVE.L	A0,(c2p_source).L
+	MOVE.L	A2,(c2p_dest).L
 	MOVEM.L	(A7)+,D0-D4/A0-A5
 	RTS
 
-_L18D4:
-	MOVEA.L	(_D2BEA).L,A1
+;	RAG-D! header parser: width, height and depth from the header.
+
+rag_header:
+	MOVEA.L	(file_buffer).L,A1
 	MOVE.W	$C(A1),6(A0)
 	MOVE.W	$E(A1),8(A0)
 	MOVE.W	$10(A1),$A(A0)
 	RTS
 
-_L18EE:
-	MOVEA.L	_D2BEA(PC),A0
+;	RAG-D! loader: a 32-byte ST palette or a 1024-byte Falcon palette, then
+;	the screen data.
+
+rag_load:
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$1E(A0),A1
 	CMPI.L	#32,$12(A0)
-	BEQ.S	_L1910
-	LEA	PALETTE0(PC),A2
+	BEQ.S	.st_palette
+	LEA	palette(PC),A2
 	MOVE.W	#$FF,D0
-_L1908:
+.falcon_palette:
 	MOVE.L	(A1)+,(A2)+
-	DBRA	D0,_L1908
-	BRA.S	_L192C
-_L1910:
-	MOVE.L	A1,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#16,(_B8F72).L
-	BSR.W	_L22B4
-_L192C:
-	BSR.W	_L0F6E
-	MOVEA.L	_D2BEA(PC),A0
+	DBRA	D0,.falcon_palette
+	BRA.S	.pixels
+.st_palette:
+	MOVE.L	A1,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#16,(pal_count).L
+	BSR.W	st_palette
+.pixels:
+	BSR.W	picture_position
+	MOVEA.L	file_buffer(PC),A0
 	MOVE.W	$E(A0),D0
 	SUBQ.W	#1,D0
-	MOVEA.L	_B4F4E(PC),A1
+	MOVEA.L	picture_start(PC),A1
 	MOVEQ	#0,D2
 	MOVE.W	$C(A0),D1
 	LSR.W	#4,D1
 	CMP.W	#40,D1
-	BGE.S	_L1956
+	BGE.S	.wide
 	MOVEQ	#40,D2
 	SUB.W	D1,D2
 	ADD.W	D2,D2
-	MULU.W	_B36EC(PC),D2
-_L1956:
-	MULU.W	_B36EC(PC),D1
+	MULU.W	screen_planes(PC),D2
+.wide:
+	MULU.W	screen_planes(PC),D1
 	SUBQ.W	#1,D1
 	ADDA.L	$12(A0),A0
 	LEA	$1E(A0),A0
-_L1964:
+.line:
 	MOVE.L	D1,D3
-_L1966:
+.word:
 	MOVE.W	(A0)+,(A1)+
-	DBRA	D3,_L1966
+	DBRA	D3,.word
 	ADDA.L	D2,A1
-	DBRA	D0,_L1964
+	DBRA	D0,.line
 	RTS
 
-_L1974:
-	MOVEA.L	(_D2BEA).L,A1
+;	POV raw header parser: width and height as decimal text. The 24-bit
+;	pixels follow.
+
+raw_header:
+	MOVEA.L	(file_buffer).L,A1
 	MOVEQ	#0,D0
 	MOVEQ	#0,D1
-_L197E:
+.width:
 	MOVE.B	(A1)+,D0
 	SUBI.W	#48,D0
-	BMI.S	_L198E
+	BMI.S	.height
 	MULU.W	#10,D1
 	ADD.W	D0,D1
-	BRA.S	_L197E
-_L198E:
+	BRA.S	.width
+.height:
 	MOVE.W	D1,6(A0)
 	MOVEQ	#0,D0
 	MOVEQ	#0,D1
-_L1996:
+.height_digit:
 	MOVE.B	(A1)+,D0
 	SUBI.W	#48,D0
-	BMI.S	_L19A6
+	BMI.S	.done
 	MULU.W	#10,D1
 	ADD.W	D0,D1
-	BRA.S	_L1996
-_L19A6:
+	BRA.S	.height_digit
+.done:
 	MOVE.W	D1,8(A0)
-	MOVE.L	A1,(_B8F64).L
+	MOVE.L	A1,(raw_pixels).L
 	RTS
 
-_L19B2:
-	MOVEA.L	_B8F64(PC),A0
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
-	MOVEA.L	_B32CC(PC),A2
+;	POV raw loader: converts the 24-bit pixels to RGB565.
+
+raw_load:
+	MOVEA.L	raw_pixels(PC),A0
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
+	MOVEA.L	format(PC),A2
 	MOVE.W	8(A2),D5
 	SUBQ.W	#1,D5
 	MOVEQ	#0,D3
 	MOVE.W	6(A2),D4
 	CMP.W	#$280,D4
-	BGE.S	_L19DC
+	BGE.S	.wide
 	MOVE.W	#$280,D3
 	SUB.W	D4,D3
 	LSL.W	#1,D3
-_L19DC:
+.wide:
 	SUBQ.W	#1,D4
-_L19DE:
+.line:
 	MOVE.W	D4,D2
-_L19E0:
+.pixel:
 	MOVE.B	(A0)+,D0
 	LSL.W	#5,D0
 	MOVE.B	(A0)+,D0
@@ -2580,65 +2705,74 @@ _L19E0:
 	LSR.W	#3,D1
 	OR.W	D1,D0
 	MOVE.W	D0,(A1)+
-	DBRA	D2,_L19E0
+	DBRA	D2,.pixel
 	ADDA.W	D3,A1
-	DBRA	D5,_L19DE
+	DBRA	D5,.line
 	RTS
 
-_L1A00:
-	MOVEA.L	(_D2BEA).L,A1
+;	GEM (X)IMG header parser: size and depth. 24-bit pictures are shown on a
+;	16-bit screen.
+
+img_header:
+	MOVEA.L	(file_buffer).L,A1
 	MOVE.W	4(A1),D0
 	CMP.W	#24,D0
-	BNE.S	_L1A14
+	BNE.S	.depth
 	MOVE.W	#16,D0
-_L1A14:
+.depth:
 	MOVE.W	D0,$A(A0)
 	MOVE.W	$C(A1),D0
-	MOVE.W	D0,(_D2708).L
+	MOVE.W	D0,(picture_width).L
 	ADDI.W	#15,D0
 	ANDI.W	#$FFF0,D0
 	MOVE.W	D0,6(A0)
 	MOVE.W	$E(A1),8(A0)
 	RTS
 
-_L1A36:
-	BSR.W	_L0F6E
-	MOVEA.L	_D2BEA(PC),A0
+;	GEM (X)IMG loader: monochrome or with several planes.
+
+img_load:
+	BSR.W	picture_position
+	MOVEA.L	file_buffer(PC),A0
 	MOVE.W	4(A0),D0
 	CMP.W	#1,D0
-	BEQ.W	_L1EBC
-	BRA.W	_L1AD2
-_L1A4E:
-	MOVEA.L	_D2BEA(PC),A0
-	LEA	PALETTE0(PC),A1
+	BEQ.W	img_load_mono
+	BRA.W	img_load_planes
+
+;	Sets the palette from an XIMG RGB palette. Pictures without one use the
+;	system palette.
+
+img_palette:
+	MOVEA.L	file_buffer(PC),A0
+	LEA	palette(PC),A1
 	CMPI.W	#8,2(A0)
-	BEQ.S	_L1A6A
+	BEQ.S	.system_palette
 	CMPI.L	#'XIMG',$10(A0)
-	BEQ.S	_L1A84
+	BEQ.S	.ximg
 	RTS
 
-_L1A6A:
+.system_palette:
 	MOVEQ	#1,D0
-	MOVE.W	_B36EC(PC),D1
+	MOVE.W	screen_planes(PC),D1
 	LSL.W	D1,D0
 	SUBQ.W	#1,D0
 	LEA	($FFFF9800).W,A0		; videl_palette[0] [Falcon]
-	LEA	PALETTE0(PC),A1
-_L1A7C:
+	LEA	palette(PC),A1
+.copy:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D1,_L1A7C
+	DBRA	D1,.copy
 	RTS
 
-_L1A84:
+.ximg:
 	TST.W	$14(A0)
-	BNE.S	_L1AD0
+	BNE.S	.done
 	MOVEQ	#1,D0
 	MOVEQ	#0,D1
 	MOVE.W	4(A0),D1
 	LSL.W	D1,D0
 	SUBQ.W	#1,D0
 	LEA	$16(A0),A0
-_L1A9A:
+.ximg_colour:
 	MOVEQ	#0,D1
 	MOVE.W	(A0)+,D1
 	ADDQ.W	#8,D1
@@ -2658,74 +2792,81 @@ _L1A9A:
 	MULU.W	#100,D1
 	DIVU.W	#$18C,D1
 	MOVE.B	D1,(A1)+
-	DBRA	D0,_L1A9A
-_L1AD0:
+	DBRA	D0,.ximg_colour
+.done:
 	RTS
 
-_L1AD2:
+;	IMG with several planes: unpacks each line with img_unpack_line and
+;	converts it with the line routine for the number of planes.
+
+img_load_planes:
 	MOVEQ	#16,D0
-	CMP.W	_B36EC(PC),D0
-	BEQ.S	_L1ADE
-	BSR.W	_L1A4E
-_L1ADE:
-	MOVEA.L	_D2BEA(PC),A0
+	CMP.W	screen_planes(PC),D0
+	BEQ.S	.palette_done
+	BSR.W	img_palette
+.palette_done:
+	MOVEA.L	file_buffer(PC),A0
 	MOVEQ	#0,D0
 	MOVE.W	$C(A0),D0
 	ADDQ.L	#7,D0
 	LSR.W	#3,D0
-	MOVE.L	D0,(_D307C).L
+	MOVE.L	D0,(plane_bytes).L
 	MULU.W	4(A0),D0
-	MOVE.L	D0,(_B8F66).L
-	MOVE.L	_B4F4E(PC),(_D3074).L
-	MOVEA.L	_B32CC(PC),A1
-	MOVE.W	_B36E8(PC),D0
+	MOVE.L	D0,(img_line_bytes).L
+	MOVE.L	picture_start(PC),(line_dest).L
+	MOVEA.L	format(PC),A1
+	MOVE.W	screen_width(PC),D0
 	LSR.W	#3,D0
 	MULU.W	$A(A1),D0
-	MOVE.L	D0,(_D3070).L
+	MOVE.L	D0,(line_step).L
 	MOVEQ	#0,D6
 	MOVE.W	6(A0),D6
 	SUBQ.W	#1,D6
 	MOVE.W	$E(A0),D3
 	SUBQ.W	#1,D3
 	MOVE.W	4(A0),D0
-	LEA	_D3010(PC),A6
+	LEA	line_routines(PC),A6
 	MOVE.L	-4(A6,D0.W*4),D0
-	BEQ.S	_L1B52
+	BEQ.S	.done
 	MOVEA.L	D0,A6
 	MOVE.W	2(A0),D0
 	ADD.W	D0,D0
 	ADDA.W	D0,A0
-_L1B3E:
-	LEA	_B374E(PC),A1
-	MOVE.L	_B8F66(PC),D7
+.line:
+	LEA	line_buffer(PC),A1
+	MOVE.L	img_line_bytes(PC),D7
 	ADD.L	A1,D7
-	BSR.W	_L1F10
+	BSR.W	img_unpack_line
 	JSR	(A6)
-	DBRA	D3,_L1B3E
-_L1B52:
+	DBRA	D3,.line
+.done:
 	RTS
 
-_L1B54:
+;	Line routines for IFF and IMG, see line_routines: copy one line from
+;	line_source (separate planes of plane_bytes each, or chunky pixels) to the
+;	screen at line_dest and advance line_dest by line_step.
+
+line_16bit:
 	MOVEM.L	D0/A0-A1,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	_D3074(PC),A1
-	MOVE.W	_D2708(PC),D0
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	line_dest(PC),A1
+	MOVE.W	picture_width(PC),D0
 	SUBQ.W	#1,D0
-_L1B66:
+.pixel:
 	MOVE.W	(A0)+,(A1)+
-	DBRA	D0,_L1B66
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	DBRA	D0,.pixel
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0/A0-A1
 	RTS
 
-_L1B7C:
+line_24bit:
 	MOVEM.L	D0-D1/A0-A1,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	_D3074(PC),A1
-	MOVE.W	_D2708(PC),D0
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	line_dest(PC),A1
+	MOVE.W	picture_width(PC),D0
 	SUBQ.W	#1,D0
-_L1B8E:
+.pixel:
 	MOVEQ	#0,D1
 	MOVE.B	(A0)+,D1
 	LSL.W	#5,D1
@@ -2734,131 +2875,131 @@ _L1B8E:
 	MOVE.B	(A0)+,D1
 	LSR.L	#3,D1
 	MOVE.W	D1,(A1)+
-	DBRA	D0,_L1B8E
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	DBRA	D0,.pixel
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0-D1/A0-A1
 	RTS
 
-_L1BB2:
+line_1plane:
 	MOVEM.L	D0/A0/A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	_D3074(PC),A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	line_dest(PC),A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
-_L1BC4:
+	ADD.L	plane_bytes(PC),D0
+.byte:
 	MOVE.B	(A0)+,(A6)+
 	CMPA.L	D0,A0
-	BNE.S	_L1BC4
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.byte
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0/A0/A6
 	RTS
 
-_L1BDA:
+line_2planes:
 	MOVEM.L	D0/A0-A1/A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	_D3074(PC),A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	line_dest(PC),A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
+	ADD.L	plane_bytes(PC),D0
 	MOVEA.L	D0,A1
-_L1BEE:
+.bytes:
 	MOVE.B	(A0)+,(A6)+
 	MOVE.B	(A1)+,1(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1C04
+	BEQ.S	.done
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	ADDQ.L	#3,A6
 	CMPA.L	D0,A0
-	BNE.S	_L1BEE
-_L1C04:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0/A0-A1/A6
 	RTS
 
-_L1C14:
+line_3planes:
 	MOVEM.L	D0/A0-A2/A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	(_D3074).L,A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	(line_dest).L,A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
+	ADD.L	plane_bytes(PC),D0
 	MOVEA.L	D0,A1
 	MOVEA.L	D0,A2
-	ADDA.L	_D307C(PC),A2
-_L1C30:
+	ADDA.L	plane_bytes(PC),A2
+.bytes:
 	MOVE.B	(A0)+,(A6)+
 	MOVE.B	(A1)+,1(A6)
 	MOVE.B	(A2)+,3(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1C52
+	BEQ.S	.done
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	MOVE.B	(A2)+,4(A6)
 	ADDQ.L	#7,A6
 	CLR.W	-2(A6)
 	CMPA.L	D0,A0
-	BNE.S	_L1C30
-_L1C52:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0/A0-A2/A6
 	RTS
 
-_L1C62:
+line_4planes:
 	MOVEM.L	D0/A0-A3/A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	(_D3074).L,A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	(line_dest).L,A6
 	MOVE.L	A0,D0
-	ADD.L	(_D307C).L,D0
+	ADD.L	(plane_bytes).L,D0
 	MOVEA.L	D0,A1
 	MOVEA.L	D0,A2
-	ADDA.L	(_D307C).L,A2
+	ADDA.L	(plane_bytes).L,A2
 	MOVEA.L	A2,A3
-	ADDA.L	(_D307C).L,A3
-_L1C8A:
+	ADDA.L	(plane_bytes).L,A3
+.bytes:
 	MOVE.B	(A0)+,(A6)+
 	MOVE.B	(A1)+,1(A6)
 	MOVE.B	(A2)+,3(A6)
 	MOVE.B	(A3)+,5(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1CB0
+	BEQ.S	.done
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	MOVE.B	(A2)+,4(A6)
 	MOVE.B	(A3)+,6(A6)
 	ADDQ.L	#7,A6
 	CMPA.L	D0,A0
-	BNE.S	_L1C8A
-_L1CB0:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0/A0-A3/A6
 	RTS
 
-_L1CC0:
+line_5planes:
 	MOVEM.L	D0-D1/A0-A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	_D3074(PC),A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	line_dest(PC),A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
+	ADD.L	plane_bytes(PC),D0
 	MOVEA.L	D0,A1
 	MOVEA.L	D0,A2
-	MOVE.L	_D307C(PC),D1
+	MOVE.L	plane_bytes(PC),D1
 	ADDA.L	D1,A2
 	MOVEA.L	A2,A3
 	ADDA.L	D1,A3
 	MOVEA.L	A3,A4
 	ADDA.L	D1,A4
-_L1CE4:
+.bytes:
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	MOVE.B	(A2)+,4(A6)
 	MOVE.B	(A3)+,6(A6)
 	MOVE.B	(A4)+,8(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1D1E
+	BEQ.S	.done
 	MOVE.B	(A0)+,1(A6)
 	MOVE.B	(A1)+,3(A6)
 	MOVE.B	(A2)+,5(A6)
@@ -2868,29 +3009,29 @@ _L1CE4:
 	CLR.L	$C(A6)
 	LEA	$10(A6),A6
 	CMPA.L	D0,A0
-	BNE.S	_L1CE4
-_L1D1E:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0-D1/A0-A6
 	RTS
 
-_L1D2E:
+line_6planes:
 	MOVEM.L	D0-D1/A0-A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	(_D3074).L,A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	(line_dest).L,A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
+	ADD.L	plane_bytes(PC),D0
 	MOVEA.L	D0,A1
 	MOVEA.L	D0,A2
-	MOVE.L	_D307C(PC),D1
+	MOVE.L	plane_bytes(PC),D1
 	ADDA.L	D1,A2
 	MOVEA.L	A2,A3
 	ADDA.L	D1,A3
 	MOVEA.L	A3,A4
 	ADDA.L	D1,A4
 	ADDA.L	D1,A4
-_L1D56:
+.bytes:
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	MOVE.B	(A2)+,4(A6)
@@ -2898,7 +3039,7 @@ _L1D56:
 	MOVE.B	-1(A3,D1.W),8(A6)
 	MOVE.B	(A4)+,$A(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1D98
+	BEQ.S	.done
 	MOVE.B	(A0)+,1(A6)
 	MOVE.B	(A1)+,3(A6)
 	MOVE.B	(A2)+,5(A6)
@@ -2908,29 +3049,29 @@ _L1D56:
 	CLR.L	$C(A6)
 	LEA	$10(A6),A6
 	CMPA.L	D0,A0
-	BNE.S	_L1D56
-_L1D98:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0-D1/A0-A6
 	RTS
 
-_L1DA8:
+line_7planes:
 	MOVEM.L	D0-D1/A0-A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	(_D3074).L,A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	(line_dest).L,A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
+	ADD.L	plane_bytes(PC),D0
 	MOVEA.L	D0,A1
 	MOVEA.L	D0,A2
-	MOVE.L	_D307C(PC),D1
+	MOVE.L	plane_bytes(PC),D1
 	ADDA.L	D1,A2
 	MOVEA.L	A2,A3
 	ADDA.L	D1,A3
 	MOVEA.L	A3,A4
 	ADDA.L	D1,A4
 	ADDA.L	D1,A4
-_L1DD0:
+.bytes:
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	MOVE.B	(A2)+,4(A6)
@@ -2939,7 +3080,7 @@ _L1DD0:
 	MOVE.B	(A4)+,$A(A6)
 	MOVE.B	-1(A4,D1.W),$C(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1E1C
+	BEQ.S	.done
 	MOVE.B	(A0)+,1(A6)
 	MOVE.B	(A1)+,3(A6)
 	MOVE.B	(A2)+,5(A6)
@@ -2950,22 +3091,22 @@ _L1DD0:
 	LEA	$E(A6),A6
 	CLR.W	(A6)+
 	CMPA.L	D0,A0
-	BNE.S	_L1DD0
-_L1E1C:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0-D1/A0-A6
 	RTS
 
-_L1E2C:
+line_8planes:
 	MOVEM.L	D0-D1/A0-A6,-(A7)
-	MOVEA.L	_D3078(PC),A0
-	MOVEA.L	(_D3074).L,A6
+	MOVEA.L	line_source(PC),A0
+	MOVEA.L	(line_dest).L,A6
 	MOVE.L	A0,D0
-	ADD.L	_D307C(PC),D0
+	ADD.L	plane_bytes(PC),D0
 	MOVEA.L	D0,A1
 	MOVEA.L	D0,A2
-	MOVE.L	_D307C(PC),D1
+	MOVE.L	plane_bytes(PC),D1
 	ADDA.L	D1,A2
 	MOVEA.L	A2,A3
 	ADDA.L	D1,A3
@@ -2975,7 +3116,7 @@ _L1E2C:
 	MOVEA.L	A4,A5
 	ADDA.L	D1,A5
 	ADDA.L	D1,A5
-_L1E5A:
+.bytes:
 	MOVE.B	(A0)+,(A6)
 	MOVE.B	(A1)+,2(A6)
 	MOVE.B	(A2)+,4(A6)
@@ -2985,7 +3126,7 @@ _L1E5A:
 	MOVE.B	-1(A4,D1.W),$C(A6)
 	MOVE.B	(A5)+,$E(A6)
 	CMPA.L	D0,A0
-	BEQ.S	_L1EAC
+	BEQ.S	.done
 	MOVE.B	(A0)+,1(A6)
 	MOVE.B	(A1)+,3(A6)
 	MOVE.B	(A2)+,5(A6)
@@ -2996,21 +3137,23 @@ _L1E5A:
 	MOVE.B	(A5)+,$F(A6)
 	LEA	$10(A6),A6
 	CMPA.L	D0,A0
-	BNE.S	_L1E5A
-_L1EAC:
-	MOVE.L	_D3070(PC),D0
-	ADD.L	D0,(_D3074).L
+	BNE.S	.bytes
+.done:
+	MOVE.L	line_step(PC),D0
+	ADD.L	D0,(line_dest).L
 	MOVEM.L	(A7)+,D0-D1/A0-A6
 	RTS
 
-_L1EBC:
-	MOVE.L	#-1,(PALETTE0).L
-	CLR.L	(_D2BF6).L
-	MOVEA.L	_D2BEA(PC),A0
+;	Monochrome IMG: unpacks the lines straight to the screen.
+
+img_load_mono:
+	MOVE.L	#-1,(palette).L
+	CLR.L	(palette+4).L
+	MOVEA.L	file_buffer(PC),A0
 	MOVE.W	$E(A0),D3
 	SUBQ.W	#1,D3
 	MOVEQ	#0,D5
-	MOVE.W	_B36E8(PC),D5
+	MOVE.W	screen_width(PC),D5
 	LSR.W	#3,D5
 	MOVEQ	#0,D7
 	MOVE.W	$C(A0),D7
@@ -3020,329 +3163,364 @@ _L1EBC:
 	SUB.L	D7,D4
 	MOVE.W	6(A0),D6
 	SUBQ.L	#1,D6
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
 	ADD.L	A1,D7
 	MOVE.W	2(A0),D0
 	ADD.W	D0,D0
 	ADDA.W	D0,A0
-_L1F04:
-	BSR.S	_L1F10
+.line:
+	BSR.S	img_unpack_line
 	ADD.L	D5,D7
 	ADDA.L	D4,A1
-	DBRA	D3,_L1F04
+	DBRA	D3,.line
 	RTS
 
-_L1F10:
-	TST.W	(_D3080).L
-	BEQ.S	_L1F22
-	SUBQ.W	#1,(_D3080).L
-	MOVEA.L	_D3082(PC),A0
-_L1F22:
+;	Unpacks IMG data from A0 to A1 up to D7: pattern runs, solid runs, bit
+;	strings and vertical repeats (img_repeat). D6 = pattern length - 1.
+
+img_unpack_line:
+	TST.W	(img_repeat).L
+	BEQ.S	.no_repeat
+	SUBQ.W	#1,(img_repeat).L
+	MOVEA.L	img_repeat_line(PC),A0
+.no_repeat:
 	TST.W	(A0)
-	BNE.S	_L1F3A
+	BNE.S	.code
 	ADDQ.L	#3,A0
-	MOVE.B	(A0)+,(_D3081).L
-	SUBQ.W	#1,(_D3080).L
-	MOVE.L	A0,(_D3082).L
-_L1F3A:
+	MOVE.B	(A0)+,(img_repeat+1).L
+	SUBQ.W	#1,(img_repeat).L
+	MOVE.L	A0,(img_repeat_line).L
+.code:
 	MOVEQ	#0,D0
 	MOVE.B	(A0)+,D0
-	BMI.S	_L1F68
-	BNE.S	_L1F5C
+	BMI.S	.not_solid_white
+	BNE.S	.white
 	MOVE.B	(A0)+,D0
 	SUBQ.W	#1,D0
-_L1F46:
+.pattern:
 	MOVE.W	D6,D1
 	MOVEA.L	A0,A2
-_L1F4A:
+.pattern_byte:
 	MOVE.B	(A2)+,(A1)+
-	DBRA	D1,_L1F4A
-	DBRA	D0,_L1F46
+	DBRA	D1,.pattern_byte
+	DBRA	D0,.pattern
 	MOVEA.L	A2,A0
-_L1F56:
+.next:
 	CMPA.L	D7,A1
-	BLT.S	_L1F3A
+	BLT.S	.code
 	RTS
 
-_L1F5C:
+.white:
 	MOVEQ	#0,D1
 	SUBQ.W	#1,D0
-_L1F60:
+.white_byte:
 	MOVE.B	D1,(A1)+
-	DBRA	D0,_L1F60
-	BRA.S	_L1F56
-_L1F68:
+	DBRA	D0,.white_byte
+	BRA.S	.next
+.not_solid_white:
 	ANDI.W	#127,D0
-	BNE.S	_L1F7A
+	BNE.S	.black
 	MOVE.B	(A0)+,D0
 	SUBQ.L	#1,D0
-_L1F72:
+.raw_byte:
 	MOVE.B	(A0)+,(A1)+
-	DBRA	D0,_L1F72
-	BRA.S	_L1F56
-_L1F7A:
+	DBRA	D0,.raw_byte
+	BRA.S	.next
+.black:
 	MOVEQ	#-1,D1
 	SUBQ.W	#1,D0
-_L1F7E:
+.black_byte:
 	MOVE.B	D1,(A1)+
-	DBRA	D0,_L1F7E
-	BRA.S	_L1F56
-_L1F86:
+	DBRA	D0,.black_byte
+	BRA.S	.next
+
+;	Unpacks PackBits data from A0 to A1 until A1 reaches D7.
+
+unpack_packbits:
 	MOVEQ	#0,D0
 	MOVE.B	(A0)+,D0
-	BPL.S	_L1F9C
+	BPL.S	.literal
 	NEG.B	D0
 	MOVE.B	(A0)+,D1
-_L1F90:
+.repeat:
 	MOVE.B	D1,(A1)+
-	DBRA	D0,_L1F90
-_L1F96:
+	DBRA	D0,.repeat
+.next:
 	CMP.L	A1,D7
-	BGT.S	_L1F86
+	BGT.S	unpack_packbits
 	RTS
 
-_L1F9C:
+.literal:
 	MOVE.B	(A0)+,(A1)+
-	DBRA	D0,_L1F9C
-	BRA.S	_L1F96
-_L1FA4:
-	MOVEA.L	_D2BEA(PC),A0
+	DBRA	D0,.literal
+	BRA.S	.next
+
+;	Degas compressed medium resolution (.PC2), lines doubled to 640 x 400.
+
+pc2_load:
+	MOVEA.L	file_buffer(PC),A0
 	ADDQ.L	#2,A0
-	MOVE.L	A0,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#4,(_B8F72).L
-	BSR.W	_L22B4
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A2
-	MOVEA.L	_D2BEA(PC),A0
+	MOVE.L	A0,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#4,(pal_count).L
+	BSR.W	st_palette
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A2
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$22(A0),A0
 	MOVE.W	#$C7,D2
-_L1FDA:
-	MOVEA.L	_D3078(PC),A1
+.line:
+	MOVEA.L	line_source(PC),A1
 	MOVE.L	A1,D7
 	ADDI.L	#$A0,D7
-	BSR.S	_L1F86
-	MOVEA.L	_D3078(PC),A1
+	BSR.S	unpack_packbits
+	MOVEA.L	line_source(PC),A1
 	MOVEQ	#39,D3
-_L1FEE:
+.word:
 	MOVE.W	(A1)+,(A2)+
 	MOVE.W	$4E(A1),(A2)+
-	DBRA	D3,_L1FEE
+	DBRA	D3,.word
 	MOVE.W	#39,D3
-_L1FFC:
+.double:
 	MOVE.L	-$A0(A2),(A2)+
-	DBRA	D3,_L1FFC
-	DBRA	D2,_L1FDA
+	DBRA	D3,.double
+	DBRA	D2,.line
 	RTS
 
-_L200A:
-	MOVEA.L	_D2BEA(PC),A0
+;	Degas compressed low resolution (.PC1).
+
+pc1_load:
+	MOVEA.L	file_buffer(PC),A0
 	ADDQ.L	#2,A0
-	MOVE.L	A0,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#16,(_B8F72).L
-	BSR.W	_L22B4
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A2
-	MOVEA.L	_D2BEA(PC),A0
+	MOVE.L	A0,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#16,(pal_count).L
+	BSR.W	st_palette
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A2
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$22(A0),A0
 	MOVE.W	#$C7,D2
-_L2040:
-	LEA	_D3078(PC),A1
+.line:
+	LEA	line_source(PC),A1
 	MOVE.L	A1,D7
 	ADDI.L	#$A0,D7
-	BSR.W	_L1F86
-	LEA	_D3078(PC),A1
+	BSR.W	unpack_packbits
+	LEA	line_source(PC),A1
 	MOVEQ	#19,D3
-_L2056:
+.block:
 	MOVE.W	(A1)+,(A2)+
 	MOVE.W	$26(A1),(A2)+
 	MOVE.W	$4E(A1),(A2)+
 	MOVE.W	$76(A1),(A2)+
-	DBRA	D3,_L2056
+	DBRA	D3,.block
 	LEA	$A0(A2),A2
-	DBRA	D2,_L2040
+	DBRA	D2,.line
 	RTS
 
-_L2072:
-	MOVEA.L	_D2BEA(PC),A0
+;	Degas compressed high resolution (.PC3).
+
+pc3_load:
+	MOVEA.L	file_buffer(PC),A0
 	TST.W	2(A0)
-	LEA	PALETTE0(PC),A1
-	BEQ.S	_L208A
+	LEA	palette(PC),A1
+	BEQ.S	.black_background
 	MOVE.L	#$FFFF00FF,(A1)+
 	CLR.L	(A1)+
-	BRA.S	_L2092
-_L208A:
+	BRA.S	.unpack
+.black_background:
 	CLR.L	(A1)+
 	MOVE.L	#$FFFF00FF,(A1)+
-_L2092:
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
-	MOVEA.L	_D2BEA(PC),A0
+.unpack:
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$22(A0),A0
 	MOVE.W	#$18F,D2
-_L20A6:
+.line:
 	MOVE.L	A1,D7
 	ADDI.L	#80,D7
-	BSR.W	_L1F86
-	DBRA	D2,_L20A6
+	BSR.W	unpack_packbits
+	DBRA	D2,.line
 	RTS
 
-_L20B8:
-	MOVE.L	#_D3086,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#16,(_B8F72).L
-	BSR.W	_L22B4
-	MOVE.L	_D2BEA(PC),(_B8F74).L
-	MOVE.L	_D2BEE(PC),(_B8F78).L
-	BSR.W	_L231E
+;	Doodle and Object Editor Mural: 32000 bytes of low resolution data, shown
+;	with a fixed palette.
+
+doodle_load:
+	MOVE.L	#doodle_palette,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#16,(pal_count).L
+	BSR.W	st_palette
+	MOVE.L	file_buffer(PC),(put_source).L
+	MOVE.L	screen(PC),(put_dest).L
+	BSR.W	put_320x200
 	RTS
 
-_L20EE:
-	MOVEA.L	_D2BEA(PC),A0
+;	Art Director: 32000 bytes of low resolution data, then the palette.
+
+art_load:
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$7D00(A0),A0
-	MOVE.L	A0,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#16,(_B8F72).L
-	BSR.W	_L22B4
-	MOVE.L	_D2BEA(PC),(_B8F74).L
-	MOVE.L	_D2BEE(PC),(_B8F78).L
-	BSR.W	_L231E
+	MOVE.L	A0,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#16,(pal_count).L
+	BSR.W	st_palette
+	MOVE.L	file_buffer(PC),(put_source).L
+	MOVE.L	screen(PC),(put_dest).L
+	BSR.W	put_320x200
 	RTS
 
-_L2128:
-	MOVEA.L	_D2BEA(PC),A0
+;	Degas low resolution (.PI1).
+
+pi1_load:
+	MOVEA.L	file_buffer(PC),A0
 	ADDQ.L	#2,A0
-	MOVE.L	A0,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#16,(_B8F72).L
-	BSR.W	_L22B4
-	MOVE.L	_D2BEA(PC),D0
+	MOVE.L	A0,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#16,(pal_count).L
+	BSR.W	st_palette
+	MOVE.L	file_buffer(PC),D0
 	ADDI.L	#34,D0
-	MOVE.L	D0,(_B8F74).L
-	MOVE.L	_D2BEE(PC),(_B8F78).L
-	BSR.W	_L231E
+	MOVE.L	D0,(put_source).L
+	MOVE.L	screen(PC),(put_dest).L
+	BSR.W	put_320x200
 	RTS
 
-_L2168:
-	MOVEA.L	_D2BEA(PC),A0
+;	Degas medium resolution (.PI2), lines doubled to 640 x 400.
+
+pi2_load:
+	MOVEA.L	file_buffer(PC),A0
 	ADDQ.L	#2,A0
-	MOVE.L	A0,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#4,(_B8F72).L
-	BSR.W	_L22B4
-	MOVEA.L	_D2BEA(PC),A0
+	MOVE.L	A0,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#4,(pal_count).L
+	BSR.W	st_palette
+	MOVEA.L	file_buffer(PC),A0
 	LEA	$22(A0),A0
-	MOVEA.L	_D2BEE(PC),A1
+	MOVEA.L	screen(PC),A1
 	MOVE.W	#$C7,D2
-_L219A:
+.line:
 	MOVEQ	#39,D0
-_L219C:
+.longword:
 	MOVE.L	(A0)+,D1
 	MOVE.L	D1,(A1)+
 	MOVE.L	D1,$9C(A1)
-	DBRA	D0,_L219C
+	DBRA	D0,.longword
 	LEA	$A0(A1),A1
-	DBRA	D2,_L219A
+	DBRA	D2,.line
 	RTS
 
-_L21B2:
-	MOVEA.L	_D2BEA(PC),A0
+;	Degas high resolution (.PI3).
+
+pi3_load:
+	MOVEA.L	file_buffer(PC),A0
 	TST.W	2(A0)
-	BEQ.S	_L21CE
-	MOVE.L	#$FFFF00FF,(PALETTE0).L
-	CLR.L	(_D2BF6).L
-	BRA.S	_L21DE
-_L21CE:
-	CLR.L	(PALETTE0).L
-	MOVE.L	#$FFFF00FF,(_D2BF6).L
-_L21DE:
+	BEQ.S	.black_background
+	MOVE.L	#$FFFF00FF,(palette).L
+	CLR.L	(palette+4).L
+	BRA.S	.copy
+.black_background:
+	CLR.L	(palette).L
+	MOVE.L	#$FFFF00FF,(palette+4).L
+.copy:
 	LEA	$22(A0),A0
-	MOVEA.L	_D2BEE(PC),A1
+	MOVEA.L	screen(PC),A1
 	MOVE.W	#$1F3F,D0
-_L21EA:
+.longword:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L21EA
+	DBRA	D0,.longword
 	RTS
 
-_L21F2:
-	LEA	PALETTE0(PC),A1
-	MOVEA.L	_D2BEA(PC),A0
+;	Extended Degas .PI4: 320 x 240 in 256 colours, Falcon palette first.
+
+pi4_load:
+	LEA	palette(PC),A1
+	MOVEA.L	file_buffer(PC),A0
 	MOVEQ	#127,D0
-_L21FC:
+.palette:
 	MOVE.L	(A0)+,(A1)+
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L21FC
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
+	DBRA	D0,.palette
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
 	MOVE.W	#$EF,D0
-_L2210:
+.line:
 	MOVEQ	#79,D1
-_L2212:
+.longword:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D1,_L2212
+	DBRA	D1,.longword
 	LEA	$140(A1),A1
-	DBRA	D0,_L2210
+	DBRA	D0,.line
 	RTS
 
-_L2222:
-	LEA	PALETTE0(PC),A1
-	MOVEA.L	_D2BEA(PC),A0
+;	Extended Degas .PI5: 640 x 480 in 256 colours, Falcon palette first.
+
+pi5_load:
+	LEA	palette(PC),A1
+	MOVEA.L	file_buffer(PC),A0
 	MOVEQ	#127,D0
-_L222C:
+.palette:
 	MOVE.L	(A0)+,(A1)+
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L222C
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
+	DBRA	D0,.palette
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
 	MOVE.W	#$9600,D0
-_L2240:
+.longword:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L2240
+	DBRA	D0,.longword
 	RTS
 
-_L2248:
-	LEA	PALETTE0(PC),A1
-	MOVEA.L	_D2BEA(PC),A0
+;	Extended Degas .PI9: 320 x 240 in 256 colours, Falcon palette first.
+
+pi9_load:
+	LEA	palette(PC),A1
+	MOVEA.L	file_buffer(PC),A0
 	MOVEQ	#127,D0
-_L2252:
+.palette:
 	MOVE.L	(A0)+,(A1)+
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D0,_L2252
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
+	DBRA	D0,.palette
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
 	MOVE.W	#$EF,D0
-_L2266:
+.line:
 	MOVEQ	#79,D1
-_L2268:
+.longword:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D1,_L2268
+	DBRA	D1,.longword
 	LEA	$140(A1),A1
-	DBRA	D0,_L2266
+	DBRA	D0,.line
 	RTS
 
-_L2278:
-	MOVEA.L	_D2BEA(PC),A0
+;	Neochrome (.NEO).
+
+neo_load:
+	MOVEA.L	file_buffer(PC),A0
 	ADDQ.L	#4,A0
-	MOVE.L	A0,(_B8F6A).L
-	MOVE.L	#PALETTE0,(_B8F6E).L
-	MOVE.W	#16,(_B8F72).L
-	BSR.S	_L22B4
-	MOVE.L	_D2BEA(PC),D0
+	MOVE.L	A0,(pal_source).L
+	MOVE.L	#palette,(pal_dest).L
+	MOVE.W	#16,(pal_count).L
+	BSR.S	st_palette
+	MOVE.L	file_buffer(PC),D0
 	ADDI.L	#$80,D0
-	MOVE.L	D0,(_B8F74).L
-	MOVE.L	_D2BEE(PC),(_B8F78).L
-	BSR.S	_L231E
+	MOVE.L	D0,(put_source).L
+	MOVE.L	screen(PC),(put_dest).L
+	BSR.S	put_320x200
 	RTS
 
-_L22B4:
+;	Converts pal_count STE colours (4 bits per component) at pal_source to
+;	Falcon palette entries at pal_dest.
+
+st_palette:
 	MOVEM.L	D0-D3/A0-A1,-(A7)
-	MOVE.W	_B8F72(PC),D0
+	MOVE.W	pal_count(PC),D0
 	SUBQ.L	#1,D0
-	MOVEA.L	_B8F6A(PC),A0
-	MOVEA.L	_B8F6E(PC),A1
-_L22C6:
+	MOVEA.L	pal_source(PC),A0
+	MOVEA.L	pal_dest(PC),A1
+.colour:
 	MOVEQ	#0,D1
 	MOVEQ	#0,D2
 	MOVE.W	(A0),D1
@@ -3376,29 +3554,32 @@ _L22C6:
 	ADD.L	D1,D1
 	OR.L	D1,D2
 	MOVE.L	D2,(A1)+
-	DBRA	D0,_L22C6
+	DBRA	D0,.colour
 	MOVEM.L	(A7)+,D0-D3/A0-A1
 	RTS
 
-_L231E:
+;	Copies a 320 x 200 picture in the screen's format from put_source to the
+;	screen.
+
+put_320x200:
 	MOVEM.L	D0-D3/A0-A1,-(A7)
-	MOVEA.L	_B8F74(PC),A0
-	MOVEA.L	_B8F78(PC),A1
-	BSR.W	_L0F6E
-	MOVEA.L	_B4F4E(PC),A1
+	MOVEA.L	put_source(PC),A0
+	MOVEA.L	put_dest(PC),A1
+	BSR.W	picture_position
+	MOVEA.L	picture_start(PC),A1
 	MOVEQ	#40,D3
-	MULU.W	_B36EC(PC),D3
+	MULU.W	screen_planes(PC),D3
 	MOVEQ	#10,D0
-	MULU.W	_B36EC(PC),D0
+	MULU.W	screen_planes(PC),D0
 	SUBQ.L	#1,D0
 	MOVE.W	#$C7,D1
-_L2344:
+.line:
 	MOVE.L	D0,D2
-_L2346:
+.longword:
 	MOVE.L	(A0)+,(A1)+
-	DBRA	D2,_L2346
+	DBRA	D2,.longword
 	ADDA.L	D3,A1
-	DBRA	D1,_L2344
+	DBRA	D1,.line
 	MOVEM.L	(A7)+,D0-D3/A0-A1
 	RTS
 
@@ -3411,26 +3592,26 @@ _L2346:
 
 ;	Header parser. A0 = format table entry.
 
-Q16_HEADER:
-	MOVEA.L	_D2BEA(PC),A1
-	CMPI.L	#20,(_B32C4).L			; File size
-	BLO.W	_L01E0
+q16_header:
+	MOVEA.L	file_buffer(PC),A1
+	CMPI.L	#20,(file_size).L			; File size
+	BLO.W	exit
 	CMPI.L	#'Q565',(A1)
-	BNE.W	_L01E0
+	BNE.W	exit
 	CMPI.B	#1,4(A1)			; Version
-	BNE.W	_L01E0
+	BNE.W	exit
 	MOVE.W	6(A1),D0			; Width, little endian
 	ROR.W	#8,D0
-	BEQ.W	_L01E0
+	BEQ.W	exit
 	CMP.W	#$7FF0,D0
-	BHI.W	_L01E0
-	MOVE.W	D0,(_D2708).L			; Real width
+	BHI.W	exit
+	MOVE.W	D0,(picture_width).L			; Real width
 	ADDI.W	#15,D0
 	ANDI.W	#$FFF0,D0
 	MOVE.W	D0,6(A0)			; Width rounded up to 16 pixels
 	MOVE.W	8(A1),D0			; Height
 	ROR.W	#8,D0
-	BEQ.W	_L01E0
+	BEQ.W	exit
 	MOVE.W	D0,8(A0)
 	MOVE.W	#16,$A(A0)			; True color
 
@@ -3438,162 +3619,162 @@ Q16_HEADER:
 	ROR.W	#8,D0
 	SWAP	D0
 	ROR.W	#8,D0
-	MOVE.L	D0,(Q16_PIXELBYTES).L
+	MOVE.L	D0,(q16_pixel_bytes).L
 	MOVE.L	16(A1),D1			; alphaBytes
 	ROR.W	#8,D1
 	SWAP	D1
 	ROR.W	#8,D1
-	MOVE.L	D1,(Q16_ALPHABYTES).L
+	MOVE.L	D1,(q16_alpha_bytes).L
 	ADD.L	D1,D0
-	BCS.W	_L01E0
+	BCS.W	exit
 	ADDI.L	#20,D0
-	BCS.W	_L01E0
-	CMP.L	(_B32C4).L,D0			; Header + data must fit in file.
-	BHI.W	_L01E0
+	BCS.W	exit
+	CMP.L	(file_size).L,D0			; Header + data must fit in file.
+	BHI.W	exit
 	RTS
 
 ;	Loader. Decodes the picture and copies it to the screen.
 
-Q16_LOAD:
-	BSR.W	_L0F6E				; Calculate screen position.
+q16_load:
+	BSR.W	picture_position				; Calculate screen position.
 	MOVEM.L	D2-D7/A2-A6,-(A7)
 
 	MOVEQ	#0,D7
-	MOVE.W	_D2708(PC),D7			; D7 = width
-	MOVEA.L	_B32CC(PC),A2
+	MOVE.W	picture_width(PC),D7			; D7 = width
+	MOVEA.L	format(PC),A2
 	MOVEQ	#0,D6
 	MOVE.W	8(A2),D6			; D6 = height
 	MOVE.L	D7,D0
 	MULU.L	D6,D0
-	MOVE.L	D0,(Q16_NBPIXELS).L
+	MOVE.L	D0,(q16_pixels_count).L
 
 	MOVE.L	#65536,-(A7)			; Table for q_decPix
 	MOVE.W	#72,-(A7)			; Malloc
 	TRAP	#1
 	ADDQ.L	#6,A7
-	MOVE.L	D0,(Q16_TABLE).L
-	BEQ.W	Q16_FAIL
+	MOVE.L	D0,(q16_table).L
+	BEQ.W	.fail
 
-	MOVE.L	(Q16_NBPIXELS).L,D0		; Pixels
+	MOVE.L	(q16_pixels_count).L,D0		; Pixels
 	ADD.L	D0,D0
 	MOVE.L	D0,-(A7)
 	MOVE.W	#72,-(A7)			; Malloc
 	TRAP	#1
 	ADDQ.L	#6,A7
-	MOVE.L	D0,(Q16_PIXELS).L
-	BEQ.W	Q16_FAIL
+	MOVE.L	D0,(q16_pixels).L
+	BEQ.W	.fail
 
-	TST.L	(Q16_ALPHABYTES).L		; Alpha
-	BEQ.S	Q16_LOAD_NOALPHA
-	MOVE.L	(Q16_NBPIXELS).L,-(A7)
+	TST.L	(q16_alpha_bytes).L		; Alpha
+	BEQ.S	.no_alpha
+	MOVE.L	(q16_pixels_count).L,-(A7)
 	MOVE.W	#72,-(A7)			; Malloc
 	TRAP	#1
 	ADDQ.L	#6,A7
-	MOVE.L	D0,(Q16_ALPHA).L
-	BEQ.W	Q16_FAIL
-Q16_LOAD_NOALPHA:
+	MOVE.L	D0,(q16_alpha).L
+	BEQ.W	.fail
+.no_alpha:
 
-	MOVE.L	(Q16_TABLE).L,-(A7)
+	MOVE.L	(q16_table).L,-(A7)
 	BSR.W	q16_setupStaticTable
 	ADDQ.L	#4,A7
 
-	MOVE.L	(Q16_TABLE).L,-(A7)		; Decode pixels.
-	MOVE.L	(Q16_NBPIXELS).L,-(A7)
-	MOVEA.L	_D2BEA(PC),A3
+	MOVE.L	(q16_table).L,-(A7)		; Decode pixels.
+	MOVE.L	(q16_pixels_count).L,-(A7)
+	MOVEA.L	file_buffer(PC),A3
 	LEA	20(A3),A3
 	MOVE.L	A3,D0
-	ADD.L	(Q16_PIXELBYTES).L,D0
+	ADD.L	(q16_pixel_bytes).L,D0
 	MOVE.L	D0,-(A7)
 	MOVE.L	A3,-(A7)
-	MOVE.L	(Q16_PIXELS).L,-(A7)
+	MOVE.L	(q16_pixels).L,-(A7)
 	BSR.W	q_decPix
 	LEA	20(A7),A7
 	TST.W	D0
-	BNE.W	Q16_FAIL
+	BNE.W	.fail
 
-	TST.L	(Q16_ALPHABYTES).L		; Decode alpha and blend.
-	BEQ.S	Q16_LOAD_COPY
-	MOVE.L	(Q16_NBPIXELS).L,-(A7)
-	ADDA.L	(Q16_PIXELBYTES).L,A3
+	TST.L	(q16_alpha_bytes).L		; Decode alpha and blend.
+	BEQ.S	.copy
+	MOVE.L	(q16_pixels_count).L,-(A7)
+	ADDA.L	(q16_pixel_bytes).L,A3
 	MOVE.L	A3,D0
-	ADD.L	(Q16_ALPHABYTES).L,D0
+	ADD.L	(q16_alpha_bytes).L,D0
 	MOVE.L	D0,-(A7)
 	MOVE.L	A3,-(A7)
-	MOVE.L	(Q16_ALPHA).L,-(A7)
+	MOVE.L	(q16_alpha).L,-(A7)
 	BSR.W	q_decAlp
 	LEA	16(A7),A7
 	TST.W	D0
-	BNE.W	Q16_FAIL
-	BSR.W	Q16_BLEND
+	BNE.W	.fail
+	BSR.W	q16_blend
 
-Q16_LOAD_COPY:
-	MOVEA.L	(Q16_PIXELS).L,A0
-	MOVEA.L	_B4F4E(PC),A1
-	MOVEA.L	_B32CC(PC),A2
+.copy:
+	MOVEA.L	(q16_pixels).L,A0
+	MOVEA.L	picture_start(PC),A1
+	MOVEA.L	format(PC),A2
 	MOVEQ	#0,D1
-	MOVE.W	_B36E8(PC),D1			; Screen width
+	MOVE.W	screen_width(PC),D1			; Screen width
 	ADD.L	D1,D1				; D1 = bytes per screen line
 	MOVE.W	6(A2),D5
 	SUB.W	D7,D5				; D5 = padding up to 16 pixels
 	SUBQ.W	#1,D7
 	MOVE.W	D6,D3
 	SUBQ.W	#1,D3
-Q16_LOAD_LINE:
+.line:
 	MOVEA.L	A1,A3
 	MOVE.W	D7,D2
-Q16_LOAD_PIXEL:
+.pixel:
 	MOVE.W	(A0)+,(A3)+
-	DBRA	D2,Q16_LOAD_PIXEL
+	DBRA	D2,.pixel
 	MOVE.W	D5,D2
-	BRA.S	Q16_LOAD_PADTEST
-Q16_LOAD_PAD:
+	BRA.S	.pad_test
+.pad:
 	CLR.W	(A3)+
-Q16_LOAD_PADTEST:
-	DBRA	D2,Q16_LOAD_PAD
+.pad_test:
+	DBRA	D2,.pad
 	ADDA.L	D1,A1
-	DBRA	D3,Q16_LOAD_LINE
+	DBRA	D3,.line
 
-	BSR.S	Q16_FREE
+	BSR.S	q16_free
 	MOVEM.L	(A7)+,D2-D7/A2-A6
 	RTS
 
-Q16_FAIL:
-	BSR.S	Q16_FREE
-	BRA.W	_L01E0
+.fail:
+	BSR.S	q16_free
+	BRA.W	exit
 
 ;	Frees the temporary buffers.
 
-Q16_FREE:
-	LEA	(Q16_TABLE).L,A3
+q16_free:
+	LEA	(q16_table).L,A3
 	MOVEQ	#2,D3
-Q16_FREE_LOOP:
+.loop:
 	MOVE.L	(A3),D0
-	BEQ.S	Q16_FREE_NEXT
+	BEQ.S	.next
 	CLR.L	(A3)
 	MOVE.L	D0,-(A7)
 	MOVE.W	#73,-(A7)			; Mfree
 	TRAP	#1
 	ADDQ.L	#6,A7
-Q16_FREE_NEXT:
+.next:
 	ADDQ.L	#4,A3
-	DBRA	D3,Q16_FREE_LOOP
+	DBRA	D3,.loop
 	RTS
 
 ;	Blends the pixels against black using the alpha channel.
 
-Q16_BLEND:
+q16_blend:
 	MOVEM.L	D2-D7,-(A7)
-	MOVEA.L	(Q16_PIXELS).L,A0
-	MOVEA.L	(Q16_ALPHA).L,A1
-	MOVE.L	(Q16_NBPIXELS).L,D7
+	MOVEA.L	(q16_pixels).L,A0
+	MOVEA.L	(q16_alpha).L,A1
+	MOVE.L	(q16_pixels_count).L,D7
 	MOVEQ	#11,D6
-Q16_BLEND_LOOP:
+.loop:
 	MOVEQ	#0,D0
 	MOVE.B	(A1)+,D0
 	CMP.B	#255,D0
-	BEQ.S	Q16_BLEND_OPAQUE
+	BEQ.S	.opaque
 	TST.B	D0
-	BEQ.S	Q16_BLEND_CLEAR
+	BEQ.S	.clear
 	ADDQ.W	#1,D0				; Multiply by (alpha + 1) / 256.
 	MOVE.W	(A0),D1
 	MOVE.W	D1,D2				; Red
@@ -3613,170 +3794,178 @@ Q16_BLEND_LOOP:
 	LSR.W	#8,D1
 	OR.W	D1,D2
 	MOVE.W	D2,(A0)+
-	BRA.S	Q16_BLEND_NEXT
-Q16_BLEND_CLEAR:
+	BRA.S	.next
+.clear:
 	CLR.W	(A0)+
-	BRA.S	Q16_BLEND_NEXT
-Q16_BLEND_OPAQUE:
+	BRA.S	.next
+.opaque:
 	ADDQ.L	#2,A0
-Q16_BLEND_NEXT:
+.next:
 	SUBQ.L	#1,D7
-	BNE.S	Q16_BLEND_LOOP
+	BNE.S	.loop
 	MOVEM.L	(A7)+,D2-D7
 	RTS
 
 	INCLUDE	"../m68k/q16dec.s"
 
 	SECTION DATA
-_D2358:
+skip_shiftmode:					; Restore the ST shift mode on exit if 0
 	dc.b	$FF,$FF
-_D235A:
+edge_masks:					; Masks for the last word of a line, by width & 15
 	dc.b	$00,$00,$00,$00,$7F,$FF,$7F,$FF,$3F,$FF,$3F,$FF,$3F,$FF,$3F,$FF
 	dc.b	$0F,$FF,$0F,$FF,$07,$FF,$07,$FF,$03,$FF,$03,$FF,$01,$FF,$01,$FF
-_D237A:
+;	Picture formats, 32 bytes each:
+;
+;	 0	Extension, e.g. ".PI1"
+;	 4	Output type, 0 = bitmap (the only one)
+;	 6	Width in pixels, rounded up to 16 (-1 = from the header parser)
+;	 8	Height in pixels (-1 = from the header parser)
+;	10	Bits per pixel (-1 = from the header parser)
+;	12	Loader
+;	16	Header parser, or -1 for formats with a fixed size
+;	20	Reserved
+
+						; Unused
 	dc.b	$00,$FF,$00,$FF,$00,$7F,$00,$7F,$00,$3F,$00,$3F,$00,$1F,$00,$1F
 	dc.b	$00,$0F,$00,$0F,$00,$07,$00,$07,$00,$03,$00,$03,$00,$01,$00,$01
+format_table:					; Picture formats, see the description above
 	dc.b	$2E,$50,$49,$31,$00,$00,$01,$40,$00,$C8,$00,$04
-	dc.l	_L2128
+	dc.l	pi1_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$50,$49,$32,$00,$00,$02,$80,$01,$90,$00,$02
-	dc.l	_L2168
+	dc.l	pi2_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$50,$49,$33,$00,$00,$02,$80,$01,$90,$00,$01
-	dc.l	_L21B2
+	dc.l	pi3_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$4E,$45,$4F,$00,$00,$01,$40,$00,$C8,$00,$04
-	dc.l	_L2278
+	dc.l	neo_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$44,$4F,$4F,$00,$00,$01,$40,$00,$C8,$00,$04
-	dc.l	_L20B8
+	dc.l	doodle_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$4D,$55,$52,$00,$00,$01,$40,$00,$C8,$00,$04
-	dc.l	_L20B8
+	dc.l	doodle_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$49,$4D,$47,$00,$00,$FF,$FF,$FF,$FF,$FF,$FF
-	dc.l	_L1A36
-	dc.l	_L1A00
+	dc.l	img_load
+	dc.l	img_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$52,$41,$57
 	dc.b	$00,$00,$FF,$FF,$FF,$FF,$00,$10
-	dc.l	_L19B2
-	dc.l	_L1974
+	dc.l	raw_load
+	dc.l	raw_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$52,$41,$47
 	dc.b	$00,$00,$FF,$FF,$FF,$FF,$FF,$FF
-	dc.l	_L18EE
-	dc.l	_L18D4
+	dc.l	rag_load
+	dc.l	rag_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$42,$4D,$50
 	dc.b	$00,$00,$FF,$FF,$FF,$FF,$FF,$FF
-	dc.l	_L16A2
-	dc.l	_L167C
+	dc.l	bmp_load
+	dc.l	bmp_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$50,$43,$33
 	dc.b	$00,$00,$02,$80,$01,$90,$00,$01
-	dc.l	_L2072
+	dc.l	pc3_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$50,$43,$32,$00,$00,$02,$80,$01,$90,$00,$02
-	dc.l	_L1FA4
+	dc.l	pc2_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$50,$43,$31,$00,$00,$01,$40,$00,$C8,$00,$04
-	dc.l	_L200A
+	dc.l	pc1_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$41,$52,$54,$00,$00,$01,$40,$00,$C8,$00,$04
-	dc.l	_L20EE
+	dc.l	art_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$49,$46,$46,$00,$00,$FF,$FF,$FF,$FF,$FF,$FF
-	dc.l	_L15AE
-	dc.l	_L153C
+	dc.l	iff_load
+	dc.l	iff_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$4D,$41,$43
 	dc.b	$00,$00,$02,$40,$02,$D0,$00,$01
-	dc.l	_L1504
+	dc.l	macpaint_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$4D,$50,$54,$00,$00,$02,$40,$02,$D0,$00,$01
-	dc.l	_L1504
+	dc.l	macpaint_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$47,$49,$46,$00,$00,$FF,$FF,$FF,$FF,$00,$08
-	dc.l	_L124A
-	dc.l	_L1200
+	dc.l	gif_load
+	dc.l	gif_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$50,$49,$34
 	dc.b	$00,$00,$01,$40,$00,$F0,$00,$08
-	dc.l	_L21F2
+	dc.l	pi4_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$50,$49,$35,$00,$00,$02,$80,$01,$E0,$00,$08
-	dc.l	_L2222
+	dc.l	pi5_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$50,$49,$39,$00,$00,$01,$40,$00,$F0,$00,$08
-	dc.l	_L2248
+	dc.l	pi9_load
 	dc.b	$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$2E,$54,$52,$55,$00,$00,$FF,$FF,$FF,$FF,$00,$10
-	dc.l	_L11C0
-	dc.l	_L119C
+	dc.l	tru_load
+	dc.l	tru_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$2E,$54,$47,$41
 	dc.b	$00,$00,$FF,$FF,$FF,$FF,$FF,$FF
-	dc.l	_L100A
-	dc.l	_L0FC4
+	dc.l	tga_load
+	dc.l	tga_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	".Q16",$00,$00,$FF,$FF,$FF,$FF,$FF,$FF	; Q16, added in v1.2
-	dc.l	Q16_LOAD
-	dc.l	Q16_HEADER
+	dc.l	q16_load
+	dc.l	q16_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00				; End of table
-_D267E:
+mode_offsets:					; Offset of the video mode for each depth in the video tables
 	dc.b	$00,$00,$00,$00,$00,$60,$00,$00,$00,$C0,$00,$00,$00,$00,$00,$00
 	dc.b	$01,$20,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$01,$80
-_D26A0:
+high_res:					; 1 = high resolution (640 wide), 0 = low
 	dc.b	$00,$01
-_D26A2:
+scroll_dx:					; Scroll speed (mouse and cursor keys), pixels
 	dc.b	$00,$00
-_D26A4:
+scroll_dy:
 	dc.b	$00,$00
-_D26A6:
+scroll_x:					; Top left of the visible part of the screen
 	dc.b	$00,$00
-_D26A8:
+scroll_y:
 	dc.b	$00,$00
-_D26AA:
+scroll_min_x:					; Scroll limits
 	dc.b	$00,$00
-_D26AC:
+scroll_min_y:
 	dc.b	$00,$00
-_D26AE:
+scroll_max_x:
 	dc.b	$00,$00
-_D26B0:
+scroll_max_y:
 	dc.b	$00,$00
-_D26B2:
+line_offset:					; Videl line offset for the screen width
 	dc.b	$00,$00
-_D26B4:
+vbl_line_offset:				; Line offset, fine scroll and screen address
 	dc.b	$00,$00
-_D26B6:
+vbl_hscroll:					; for the next VBL
 	dc.b	$00,$00
-_D26B8:
+vbl_screen:
 	dc.b	$00
-_D26B9:
 	dc.b	$00
-_D26BA:
 	dc.b	$00
-_D26BB:
 	dc.b	$00
-_D26BC:
+video_saved:					; 1 when save_video has run
 	dc.b	$00,$00
-_D26BE:
+monitor:					; -1 = VGA, 1 = NTSC, 0 = PAL
 	dc.b	$00,$00
-_D26C0:
+greyscale:					; Bit 0 set: grey palette shown
 	dc.b	$00
-_D26C1:
 	dc.b	$00
-STR_SAVEDPIC_BIN:
+name_bin:					; Files written by save_picture
 	dc.b	"SAVEDPIC.BIN",$00
-STR_SAVEDPIC_PAL:
+name_pal:
 	dc.b	"SAVEDPIC.PAL",$00
-STR_SAVEDPIC_TXT:
+name_txt:
 	dc.b	"SAVEDPIC.TXT",$00
-STR_0000_X:
+info_text:					; Text for SAVEDPIC.TXT
 	dc.b	"0000 X "
-STR_0000_PIXELS:
+info_height:
 	dc.b	"0000 pixels, "
-STR_000_COLORS:
+info_colours:
 	dc.b	"000 colors."
-_D2708:
+picture_width:					; Real width of the picture in pixels
 	dc.b	$00,$00
-_D270A:
+video_vga:					; Video modes, 48 bytes each, see set_video
 	dc.b	$00,$00,$00,$28,$00,$00,$04,$00,$00,$C6,$00,$8D,$00,$15,$02,$73
 	dc.b	$00,$50,$00,$96,$00,$00,$00,$00,$04,$19,$03,$FF,$00,$3F,$00,$3F
 	dc.b	$03,$FF,$04,$15,$01,$86,$00,$08,$00,$00,$02,$00,$00,$00,$00,$00
@@ -3801,7 +3990,7 @@ _D270A:
 	dc.b	$00,$00,$01,$40,$00,$00,$01,$00,$00,$C6,$00,$8D,$00,$15,$02,$AC
 	dc.b	$00,$91,$00,$96,$00,$00,$00,$00,$04,$19,$03,$FF,$00,$3F,$00,$3F
 	dc.b	$03,$FF,$04,$15,$01,$86,$00,$05,$00,$00,$02,$00,$00,$00,$00,$00
-_D288A:
+video_pal:					; and mode_offsets: 1 plane high resolution,
 	dc.b	$00,$00,$00,$28,$00,$00,$04,$00,$01,$FE,$01,$99,$00,$50,$03,$EF
 	dc.b	$00,$A0,$01,$B2,$00,$00,$00,$00,$02,$70,$02,$65,$00,$2F,$00,$7E
 	dc.b	$02,$0E,$02,$6B,$01,$81,$00,$06,$00,$00,$02,$00,$00,$00,$00,$00
@@ -3829,7 +4018,7 @@ _D288A:
 	dc.b	$00,$00,$02,$80,$00,$00,$01,$00,$01,$FE,$01,$99,$00,$50,$00,$71
 	dc.b	$01,$22,$01,$B2,$00,$00,$00,$00,$02,$70,$02,$65,$00,$2F,$00,$7E
 	dc.b	$02,$0E,$02,$6B,$01,$81,$00,$06,$00,$00,$02,$00,$00,$00,$00,$00
-_D2A3A:
+video_ntsc:					; then 2, 4, 8, 16 bits low and high (VGA: no 16 high)
 	dc.b	$00,$00,$00,$28,$00,$00,$04,$00,$01,$FF,$01,$97,$00,$50,$03,$F0
 	dc.b	$00,$9F,$01,$B4,$00,$00,$00,$00,$02,$0C,$02,$01,$00,$16,$00,$4C
 	dc.b	$01,$DC,$02,$07,$01,$81,$00,$06,$00,$00,$00,$00,$00,$00,$00,$00
@@ -3857,19 +4046,15 @@ _D2A3A:
 	dc.b	$00,$00,$02,$80,$00,$00,$01,$00,$01,$FF,$01,$97,$00,$50,$00,$71
 	dc.b	$01,$21,$01,$B4,$00,$00,$00,$00,$02,$0C,$02,$01,$00,$16,$00,$4C
 	dc.b	$01,$DC,$02,$07,$01,$81,$00,$06,$00,$00,$00,$00,$00,$00,$00,$00
-_D2BEA:
+file_buffer:					; The picture file
 	dc.b	$00,$00,$00,$00
-_D2BEE:
+screen:						; The screen, aligned to a long word
 	dc.b	$00
-_D2BEF:
 	dc.b	$00
-_D2BF0:
 	dc.b	$00
-_D2BF1:
 	dc.b	$00
-PALETTE0:
+palette:					; Picture palette, Falcon format: R, G, 0, B
 	dc.b	$00,$00,$00,$00
-_D2BF6:
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -3934,48 +4119,46 @@ _D2BF6:
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-_D2FF2:
+unused_tga_buffer:				; RLE Targa buffer in version 1.1, unused
 	dc.b	$00,$00,$00,$00
-	dc.l	PALETTE0
-_D2FFA:
+	dc.l	palette
+gif_pixels:					; Where gif_unpack writes the pixels
 	dc.b	$00,$00,$00,$00
-_D2FFE:
+gif_info:					; Descriptors from gif_parse, +10 = image width
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-_D3008:
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00
-_D3010:
-	dc.l	_L1BB2
-	dc.l	_L1BDA
-	dc.l	_L1C14
-	dc.l	_L1C62
-	dc.l	_L1CC0
-	dc.l	_L1D2E
-	dc.l	_L1DA8
-	dc.l	_L1E2C
+line_routines:					; Line routine by number of planes - 1, see line_16bit
+	dc.l	line_1plane
+	dc.l	line_2planes
+	dc.l	line_3planes
+	dc.l	line_4planes
+	dc.l	line_5planes
+	dc.l	line_6planes
+	dc.l	line_7planes
+	dc.l	line_8planes
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-	dc.l	_L1B54
+	dc.l	line_16bit
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-	dc.l	_L1B7C
-_D3070:
+	dc.l	line_24bit
+line_step:					; Bytes per screen line
 	dc.b	$00,$00,$00,$00
-_D3074:
+line_dest:					; Screen line to write
 	dc.b	$00,$00,$00,$00
-_D3078:
-	dc.l	_B374E
-_D307C:
+line_source:					; Line to convert, the line buffer by default
+	dc.l	line_buffer
+plane_bytes:					; Bytes per line and plane
 	dc.b	$00,$00,$00,$00
-_D3080:
+img_repeat:					; IMG vertical repeat count (byte at img_repeat+1)
 	dc.b	$00
-_D3081:
 	dc.b	$00
-_D3082:
+img_repeat_line:				; IMG line to repeat
 	dc.b	$00,$00,$00,$00
-_D3086:
+doodle_palette:					; Fixed palette for Doodle pictures, STE format
 	dc.b	$0F,$FF,$0F,$00,$00,$F0,$0F,$F0,$00,$0F,$0F,$0F,$00,$FF,$0D,$DD
 	dc.b	$04,$44,$05,$00,$00,$50,$05,$50,$00,$05,$05,$05,$00,$55,$00,$00
-STR_THE_SHOWER_PICTURE_V:
+title_text:					; Printed at start
 	dc.b	"The SHOWER picture-viewer v1.2.",$0A,$0D
 	dc.b	"-------------------------------",$0A,$0D,$0A
 	dc.b	"Functions & Controls",$0D,$0A,"--------------------",$0D,$0A
@@ -3993,127 +4176,123 @@ STR_THE_SHOWER_PICTURE_V:
 	dc.b	$00
 
 	SECTION BSS
-_B32A4:
+border_colour:					; Colour around small pictures
 	ds.b	2
-_B32A6:
+darkest_colour:
 	ds.b	2
-_B32A8:
+brightest_colour:
 	ds.b	2
-_B32AA:
+screen_line_bytes:				; Bytes per screen line
 	ds.b	2
-_B32AC:
+picture_line_bytes:				; Bytes per picture line
 	ds.b	2
-_B32AE:
+border_top:					; Lines above the picture - 1, or -1
 	ds.b	2
-_B32B0:
+border_sides:					; Picture lines - 1, or -1 if no side borders
 	ds.b	2
-_B32B2:
+border_left:					; Words - 1 left of the picture
 	ds.b	2
-_B32B4:
+border_right:					; Words - 1 right of the picture
 	ds.b	2
-_B32B6:
+border_bottom:					; Lines below the picture - 1, or -1
 	ds.b	2
-_B32B8:
+video_table:					; video_vga, video_pal or video_ntsc (+1 unused byte)
 	ds.b	5
-_B32BD:
+mouse_buttons:					; Header byte of the last mouse packet
 	ds.b	1
-SAVED_BASEPAGE:
+cmdline:					; Command line: the picture file name
 	ds.b	4
-_B32C2:
+file_handle:
 	ds.b	2
-_B32C4:
+file_size:
 	ds.b	4
-_B32C8:
+file_extension:					; For example ".GIF"
 	ds.b	4
-_B32CC:
+format:						; Format table entry of the picture
 	ds.b	4
-OLD_HSCROLL_NOPREFETCH:
+old_hscroll:					; Saved video state
 	ds.b	2
-OLD_VID_LINEOFFSET:
+old_line_offset:
 	ds.b	2
-_B32D4:
+old_mousevec:
 	ds.b	4
-_B32D8:
+kbdvecs:					; From Kbdvbase
 	ds.b	4
-SAVED_PHYSBASE:
+old_physbase:
 	ds.b	1
-_B32DD:
 	ds.b	1
-_B32DE:
 	ds.b	1
-_B32DF:
 	ds.b	1
-PALETTE1:
+old_palette:
 	ds.b	1024
-_B36E0:
+screen_size:					; In bytes
 	ds.b	4
-_B36E4:
+screen_block:					; Screen memory block for Mfree
 	ds.b	4
-_B36E8:
+screen_width:					; Screen size: at least 640 x 480
 	ds.b	2
-_B36EA:
+screen_height:
 	ds.b	2
-_B36EC:
+screen_planes:					; 1, 2, 4, 8 or 16
 	ds.b	2
-OLD_VBL:
+old_vbl:
 	ds.b	4
-_B36F2:
+dta:						; For Fsfirst
 	ds.b	44
-_B371E:
+old_video:					; Videl registers saved by save_video
 	ds.b	44
-OLD_SHIFTMODE:
+old_shiftmode:					; Must follow old_video, see restore_video
 	ds.b	4
-_B374E:
+line_buffer:					; One unpacked line, also the LZW stack
 	ds.b	4096
-_B474E:
+gif_parsed:					; gif_parse's output
 	ds.b	2048
-_B4F4E:
+picture_start:					; Screen address of the picture, see picture_position
 	ds.b	4
-_B4F52:
+gif_info_ptr:					; Where gif_unpack copies the descriptors
 	ds.b	4
-_B4F56:
+work_tables:					; LZW string table, then the c2p tables
 	ds.b	2048
-_B5756:
 	ds.b	14336
-_B8F56:
+iff_bmhd:					; Address of the BMHD chunk
 	ds.b	4
-_B8F5A:
+c2p_source:					; c2p_line parameters
 	ds.b	4
-_B8F5E:
+c2p_dest:
 	ds.b	4
-_B8F62:
+c2p_blocks:
 	ds.b	2
-_B8F64:
+raw_pixels:					; POV raw pixels. Written as a long word, so it
 	ds.b	2
-_B8F66:
+img_line_bytes:					; overlaps this (only used by another format)
 	ds.b	4
-_B8F6A:
+pal_source:					; st_palette parameters
 	ds.b	4
-_B8F6E:
+pal_dest:
 	ds.b	4
-_B8F72:
+pal_count:
 	ds.b	2
-_B8F74:
+put_source:					; put_320x200 parameters
 	ds.b	4
-_B8F78:
+put_dest:
 	ds.b	4
-TGA_BUFFER:					; v1.2: RLE Targa buffer
+tga_buffer:					; v1.2: RLE Targa buffer
 	ds.b	4
-BMP_TOPDOWN:					; v1.2: BMP stored top-down
+bmp_top_down:					; v1.2: BMP stored top-down
 	ds.b	2
-GIF_INTERLACED:					; v1.2: GIF is interlaced
+gif_interlaced:					; v1.2: GIF is interlaced
 	ds.b	2
-GIF_BUFFER:					; v1.2: buffer for interlaced GIF
+gif_buffer:					; v1.2: buffer for interlaced GIF
 	ds.b	4
-Q16_PIXELBYTES:
+q16_pixel_bytes:
 	ds.b	4
-Q16_ALPHABYTES:
+q16_alpha_bytes:
 	ds.b	4
-Q16_NBPIXELS:
+q16_pixels_count:
 	ds.b	4
-Q16_TABLE:					; Q16_TABLE, Q16_PIXELS and Q16_ALPHA
-	ds.b	4				; must stay together, see Q16_FREE.
-Q16_PIXELS:
+q16_table:					; q16_table, q16_pixels and q16_alpha
+	ds.b	4				; must stay together, see q16_free.
+q16_pixels:
 	ds.b	4
-Q16_ALPHA:
+q16_alpha:
 	ds.b	4

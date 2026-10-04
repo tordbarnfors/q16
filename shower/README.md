@@ -14,15 +14,15 @@ SHOWER.TTP and is the first commit of `shower.s`.
 
 Version 1.2 adds support for Q16 pictures (`.Q16`):
 
-* The format table has a new entry with a header parser (`Q16_HEADER`) and a
-  loader (`Q16_LOAD`), following the same pattern as the Targa support.
+* The format table has a new entry with a header parser (`q16_header`) and a
+  loader (`q16_load`), following the same pattern as the Targa support.
 * The picture is decoded by `m68k/q16dec.s`, which is included into the
   source, into a temporary buffer and copied to the screen.
 * Pictures with alpha are blended against black.
 
 It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
 
-* Targa: the loader (`_L0FC4`, `_L100A`) is rewritten. Version 1.1 skewed
+* Targa: the loader (`tga_header`, `tga_load`) is rewritten. Version 1.1 skewed
   pictures with a width that isn't a multiple of 16 pixels, showed
   bottom-up pictures (the default origin) upside down, converted
   uncompressed 16-bit pixels wrongly (`ADD.W D1,D0` instead of
@@ -43,8 +43,22 @@ It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
   palette was assumed after a 40-byte info header, and compressed or
   non-256-colour files weren't rejected. Top-down BMP files are supported.
 
-Labels from the disassembly (`_Lxxxx`, `_Dxxxx`, `_Bxxxx`) are kept as they
-are, apart from the few rg-dis named itself.
+## Labels
+
+The disassembly had numbered labels (`_L0FC4`, `_D2BEA`, `_B32C4`). They
+have been replaced by names that say what the code or variable is for
+(`tga_header`, `file_buffer`, `file_size`), with the help of the source of
+an earlier Shower version, and every function and variable has a short
+description. Labels inside a function are local (they start with a dot,
+Devpac style), so only functions, variables and tables are global. A few
+numbered labels were offsets into a neighbouring variable and are now
+written as such, for example `screen+1` for the second byte of `screen`.
+
+The renaming was checked to use every local label only inside its own
+function, and the result assembles to exactly the same SHOWER.TTP as
+before. The internal labels of `m68k/q16dec.s` and `m68k/q16enc.s`, which
+are included into the source, are local too; the GEM-View modules, the
+benchmark and Shower all build byte-identical to before.
 
 ## Building
 
@@ -86,3 +100,14 @@ and `regress.py` are the regression test.
 
 * 32-bit Targa pictures are shown without their alpha channel, unlike Q16
   pictures, which are blended against black.
+* Found while naming the labels, not fixed yet (also in version 1.1):
+  * `img_palette` copies the system palette for IMG files without an XIMG
+    palette with `DBRA D1` instead of `DBRA D0`, so only the first few
+    colours are set.
+  * `pc1_load` unpacks each line over `line_source` and the variables after
+    it (`LEA line_source(PC),A1` instead of `MOVEA.L line_source(PC),A1`).
+    It works because nothing uses them afterwards.
+  * `pi5_load` copies 153604 bytes, half of a 640 x 480 picture in 256
+    colours, as the DBRA counter can't count to 76800 long words.
+  * `raw_header` writes the 32-bit `raw_pixels` into a 16-bit variable,
+    overwriting `img_line_bytes` (only used for IMG files).

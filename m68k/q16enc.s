@@ -149,9 +149,9 @@ _q_encPix:
 
 	move.l	sp,a3			; Clear the palette.
 	moveq	#EP_PALSIZE/4-1,d0
-ep_clear:
+.clear:
 	clr.l	(a3)+
-	dbra	d0,ep_clear
+	dbra	d0,.clear
 	move.l	sp,a3
 
 	moveq	#0,d0
@@ -159,55 +159,55 @@ ep_clear:
 	moveq	#11,d5
 	moveq	#0,d7
 
-ep_loop:
+.loop:
 	cmpa.l	a4,a0
-	bhs	ep_done
+	bhs	.done
 	move.w	(a0)+,d1
 	cmp.w	d7,d1
-	bne.s	ep_notrepeat
+	bne.s	.notrepeat
 
 	; 001xxxxx - Repeat previous pixel (1-32).
 
 	moveq	#0,d2			; d2 = count - 1
-ep_repeat:
+.repeat:
 	cmpa.l	a4,a0
-	bhs.s	ep_repeatend
+	bhs.s	.repeatend
 	cmp.w	(a0),d1
-	bne.s	ep_repeatend
+	bne.s	.repeatend
 	addq.l	#2,a0
 	addq.w	#1,d2
 	cmp.w	#31,d2
-	blo.s	ep_repeat
-ep_repeatend:
+	blo.s	.repeat
+.repeatend:
 	or.b	#$20,d2
 	move.b	d2,(a1)+
-	bra.s	ep_loop
+	bra.s	.loop
 
 	; 01xxxxxx - Pixel from palette.
 
-ep_notrepeat:
+.notrepeat:
 	move.b	(a2,d1.l),d0
 	cmp.w	(a3,d0.w*2),d1
-	bne.s	ep_notindex
+	bne.s	.notindex
 	move.b	d0,d2
 	or.b	#$40,d2
 	move.b	d2,(a1)+
 	move.w	d1,d7
-	bra.s	ep_loop
+	bra.s	.loop
 
 	; 1rrgggbb - Delta from previous pixel.
 
-ep_notindex:
-	DELTA	d1,d7,d2,d3,d4,ep_literal
+.notindex:
+	DELTA	d1,d7,d2,d3,d4,.literal
 	move.b	d2,(a1)+
 	move.w	d1,(a3,d0.w*2)
 	move.w	d1,d7
-	bra	ep_loop
+	bra	.loop
 
 	; 000xxxxx - New pixels (1-32), little endian. Continues for as long
 	; as the next pixel can't be stored in a better way.
 
-ep_literal:
+.literal:
 	move.l	a1,a5			; Count byte, filled in when done.
 	addq.l	#1,a1
 	move.w	d1,d2
@@ -215,34 +215,34 @@ ep_literal:
 	move.w	d2,(a1)+
 	move.w	d1,(a3,d0.w*2)
 	moveq	#0,d6			; d6 = count - 1
-ep_literalnext:
+.literalnext:
 	cmp.w	#31,d6
-	bhs.s	ep_literalend
+	bhs.s	.literalend
 	cmpa.l	a4,a0
-	bhs.s	ep_literalend
+	bhs.s	.literalend
 	moveq	#0,d3
 	move.w	(a0),d3			; d3 = next pixel
 	cmp.w	d1,d3
-	beq.s	ep_literalend		; Start of repeat.
+	beq.s	.literalend		; Start of repeat.
 	move.b	(a2,d3.l),d0
 	cmp.w	(a3,d0.w*2),d3
-	beq.s	ep_literalend		; Can be taken from palette.
-	DELTA	d3,d1,d2,d4,d7,ep_literalpixel
-	bra.s	ep_literalend		; Can be stored as delta.
-ep_literalpixel:
+	beq.s	.literalend		; Can be taken from palette.
+	DELTA	d3,d1,d2,d4,d7,.literalpixel
+	bra.s	.literalend		; Can be stored as delta.
+.literalpixel:
 	move.w	d3,(a3,d0.w*2)
 	move.w	d3,d1
 	ror.w	#8,d3
 	move.w	d3,(a1)+
 	addq.l	#2,a0
 	addq.w	#1,d6
-	bra.s	ep_literalnext
-ep_literalend:
+	bra.s	.literalnext
+.literalend:
 	move.b	d6,(a5)
 	move.w	d1,d7
-	bra	ep_loop
+	bra	.loop
 
-ep_done:
+.done:
 	move.l	a1,d0
 	move.l	a1,a0
 	lea	EP_PALSIZE(sp),sp
@@ -284,7 +284,7 @@ _q_encAlp:
 	move.l	EA_ARGS+8(sp),a2	; pEnd
 
 	cmpa.l	a2,a0
-	bhs	ea_return		; Nothing to compress.
+	bhs	.return		; Nothing to compress.
 
 	move.l	a1,a5
 	addq.l	#1,a1
@@ -292,16 +292,16 @@ _q_encAlp:
 	move.b	d7,(a1)+
 	moveq	#1,d6
 
-ea_loop:
+.loop:
 	cmpa.l	a2,a0
-	bhs.s	ea_end
+	bhs.s	.end
 	lea	1(a0),a3
 	cmpa.l	a2,a3
-	bhs.s	ea_verbatim
+	bhs.s	.verbatim
 	cmp.b	(a0),d7
-	bne.s	ea_verbatim
+	bne.s	.verbatim
 	cmp.b	(a3),d7
-	bne.s	ea_verbatim
+	bne.s	.verbatim
 
 	; At least two more of the last value, store as repeats.
 
@@ -309,56 +309,56 @@ ea_loop:
 	subq.b	#1,d0
 	move.b	d0,(a5)			; Close current span.
 	addq.l	#1,a3
-ea_scan:
+.scan:
 	cmpa.l	a2,a3
-	bhs.s	ea_scanned
+	bhs.s	.scanned
 	cmp.b	(a3),d7
-	bne.s	ea_scanned
+	bne.s	.scanned
 	addq.l	#1,a3
-	bra.s	ea_scan
-ea_scanned:
+	bra.s	.scan
+.scanned:
 	move.l	a3,d2
 	sub.l	a0,d2			; d2 = repeats
-ea_repeat:
+.repeat:
 	cmp.l	#2,d2
-	blo.s	ea_repeatdone
+	blo.s	.repeatdone
 	move.l	d2,d3
 	cmp.l	#128,d3
-	bls.s	ea_repeat2
+	bls.s	.repeat2
 	move.l	#128,d3
-ea_repeat2:
+.repeat2:
 	move.b	d3,d0
 	neg.b	d0
 	move.b	d0,(a1)+
 	sub.l	d3,d2
 	adda.l	d3,a0
-	bra.s	ea_repeat
-ea_repeatdone:
+	bra.s	.repeat
+.repeatdone:
 	cmpa.l	a2,a0
-	beq.s	ea_return		; Input ended with repeats.
+	beq.s	.return		; Input ended with repeats.
 	move.l	a1,a5			; New span.
 	addq.l	#1,a1
 	moveq	#0,d6
-	bra.s	ea_copy
+	bra.s	.copy
 
-ea_verbatim:
+.verbatim:
 	cmp.w	#128,d6
-	bne.s	ea_copy
+	bne.s	.copy
 	move.b	#127,(a5)		; Span full, start a new one.
 	move.l	a1,a5
 	addq.l	#1,a1
 	moveq	#0,d6
-ea_copy:
+.copy:
 	move.b	(a0)+,d7
 	move.b	d7,(a1)+
 	addq.w	#1,d6
-	bra.s	ea_loop
+	bra.s	.loop
 
-ea_end:
+.end:
 	move.b	d6,d0
 	subq.b	#1,d0
 	move.b	d0,(a5)
-ea_return:
+.return:
 	move.l	a1,d0
 	move.l	a1,a0
 	movem.l	(sp)+,d2-d3/d6-d7/a2-a3/a5

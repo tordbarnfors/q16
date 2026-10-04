@@ -59,7 +59,7 @@ _q16_setupStaticTable:
 	move.l	4(sp),a0
 	move.l	d2,-(sp)
 	moveq	#0,d0			; d0 = pixel value p, loops through 0-65535
-sst_loop:
+.loop:
 	move.w	d0,d1
 	move.w	d0,d2
 	lsr.w	#3,d2
@@ -71,7 +71,7 @@ sst_loop:
 	and.b	#63,d1
 	move.b	d1,(a0)+
 	addq.w	#1,d0
-	bne.s	sst_loop
+	bne.s	.loop
 	move.l	(sp)+,d2
 	rts
 
@@ -98,7 +98,7 @@ q16_readHeader:
 _q16_readHeader:
 	move.l	RH_HEADER(sp),a0
 	cmp.l	#$51353635,(a0)		; "Q565"
-	bne.s	rh_notq16
+	bne.s	.not_q16
 
 	move.l	RH_WIDTH(sp),a1
 	move.w	6(a0),d0
@@ -132,12 +132,12 @@ _q16_readHeader:
 
 	moveq	#0,d0
 	cmp.b	#1,4(a0)
-	beq.s	rh_done
+	beq.s	.done
 	moveq	#-2,d0			; Version unsupported by this decoder.
-rh_done:
+.done:
 	rts
 
-rh_notq16:
+.not_q16:
 	move.l	RH_WIDTH(sp),a1
 	clr.w	(a1)
 	move.l	RH_HEIGHT(sp),a1
@@ -202,20 +202,20 @@ _q_decPix:
 	move.l	DP_ARGS+16(sp),a2	; staticTable
 
 	cmpa.l	a0,a6
-	blo	dp_error		; pEnd before pBegin.
+	blo	.error		; pEnd before pBegin.
 
 	add.l	d5,d5
 	add.l	a1,d5			; d5 = end of output
 
 	move.l	sp,a3			; Clear the palette.
 	moveq	#DP_PALSIZE/4-1,d0
-dp_clear:
+.clear:
 	clr.l	(a3)+
-	dbra	d0,dp_clear
+	dbra	d0,.clear
 
 	move.l	sp,a3
 	lea	-$40*2(a3),a5
-	lea	dp_deltatable-$80*2(pc),a4
+	lea	.deltatable-$80*2(pc),a4
 
 	moveq	#0,d0
 	moveq	#0,d1
@@ -226,7 +226,7 @@ dp_clear:
 	; for end of input or output. An opcode reads at most 65 bytes and
 	; writes at most 32 pixels (64 bytes).
 
-dp_refill:
+.refill:
 	move.l	a6,d3
 	sub.l	a0,d3
 	lsr.l	#7,d3			; d3 = input bytes left / 128
@@ -234,86 +234,86 @@ dp_refill:
 	sub.l	a1,d4
 	lsr.l	#6,d4			; d4 = output bytes left / 64
 	cmp.l	d4,d3
-	bls.s	dp_refill2
+	bls.s	.refill2
 	move.l	d4,d3
-dp_refill2:
+.refill2:
 	tst.l	d3
-	beq	dp_slow			; Close to the end, continue carefully.
+	beq	.slow			; Close to the end, continue carefully.
 	cmp.l	#$10000,d3
-	bls.s	dp_refill3
+	bls.s	.refill3
 	move.l	#$10000,d3
-dp_refill3:
+.refill3:
 	subq.l	#1,d3
 	move.w	d3,d6
 
 	; Fast loop. No checks for end of input or output.
 
-dp_loop:
+.loop:
 	move.b	(a0)+,d0
-	bmi.s	dp_delta
+	bmi.s	.delta
 	btst	#6,d0
-	bne.s	dp_index
+	bne.s	.index
 	btst	#5,d0
-	bne.s	dp_repeat
+	bne.s	.repeat
 
 	; 000xxxxx - New pixels (1-32), little endian.
 
 	move.w	d0,d3
-dp_literal:
+.literal:
 	move.w	(a0)+,d1
 	ror.w	#8,d1
 	move.w	d1,(a1)+
 	move.b	(a2,d1.l),d2
 	move.w	d1,(a3,d2.w*2)
-	dbra	d3,dp_literal
+	dbra	d3,.literal
 	move.w	d1,d7
-	dbra	d6,dp_loop
-	bra.s	dp_refill
+	dbra	d6,.loop
+	bra.s	.refill
 
 	; 1rrgggbb - Delta from previous pixel.
 
-dp_delta:
+.delta:
 	add.w	(a4,d0.w*2),d7
 	move.w	d7,(a1)+
 	move.b	(a2,d7.l),d2
 	move.w	d7,(a3,d2.w*2)
-	dbra	d6,dp_loop
-	bra.s	dp_refill
+	dbra	d6,.loop
+	bra.s	.refill
 
 	; 01xxxxxx - Pixel from palette.
 
-dp_index:
+.index:
 	move.w	(a5,d0.w*2),d7
 	move.w	d7,(a1)+
-	dbra	d6,dp_loop
-	bra.s	dp_refill
+	dbra	d6,.loop
+	bra.s	.refill
 
 	; 001xxxxx - Repeat previous pixel (1-32).
 
-dp_repeat:
+.repeat:
 	moveq	#$1f,d3
 	and.w	d0,d3
 	add.w	d3,d3
 	neg.w	d3
-	jmp	dp_replast(pc,d3.w)
+	jmp	.replast(pc,d3.w)
 	REPT	31
 	move.w	d7,(a1)+
 	ENDR
-dp_replast:
+.replast:
 	move.w	d7,(a1)+
-	dbra	d6,dp_loop
-	bra	dp_refill
+	dbra	d6,.loop
+	bra	.refill
 
 	; Slow loop for the last opcodes. Checks every opcode against end of
 	; input and output.
 
-dp_slow:
+.slow:
 	cmpa.l	a6,a0
-	bhs.s	dp_inputend
+	bhs.s	.inputend
 	move.b	(a0)+,d0
-	bmi.s	dp_slowdelta
+	bmi.s	.slowdelta
 	btst	#6,d0
-	bne.s	dp_slowindex
+	bne.s	.slowindex
 
 	moveq	#$1f,d3
 	and.w	d0,d3			; d3 = pixels - 1
@@ -324,56 +324,56 @@ dp_slow:
 	move.l	d5,d1
 	sub.l	a1,d1
 	cmp.l	d4,d1
-	blo.s	dp_error		; Writes beyond end of output.
+	blo.s	.error		; Writes beyond end of output.
 	moveq	#0,d1
 
 	btst	#5,d0
-	bne.s	dp_slowrepeat
+	bne.s	.slowrepeat
 
 	move.l	a6,d1
 	sub.l	a0,d1
 	cmp.l	d4,d1
-	blo.s	dp_error		; Reads beyond end of input.
+	blo.s	.error		; Reads beyond end of input.
 	moveq	#0,d1
-dp_slowliteral:
+.slowliteral:
 	move.w	(a0)+,d1
 	ror.w	#8,d1
 	move.w	d1,(a1)+
 	move.b	(a2,d1.l),d2
 	move.w	d1,(a3,d2.w*2)
-	dbra	d3,dp_slowliteral
+	dbra	d3,.slowliteral
 	move.w	d1,d7
-	bra.s	dp_slow
+	bra.s	.slow
 
-dp_slowrepeat:
+.slowrepeat:
 	move.w	d7,(a1)+
-	dbra	d3,dp_slowrepeat
-	bra.s	dp_slow
+	dbra	d3,.slowrepeat
+	bra.s	.slow
 
-dp_slowdelta:
+.slowdelta:
 	cmp.l	a1,d5
-	bls.s	dp_error
+	bls.s	.error
 	add.w	(a4,d0.w*2),d7
 	move.w	d7,(a1)+
 	move.b	(a2,d7.l),d2
 	move.w	d7,(a3,d2.w*2)
-	bra.s	dp_slow
+	bra.s	.slow
 
-dp_slowindex:
+.slowindex:
 	cmp.l	a1,d5
-	bls.s	dp_error
+	bls.s	.error
 	move.w	(a5,d0.w*2),d7
 	move.w	d7,(a1)+
-	bra.s	dp_slow
+	bra.s	.slow
 
-dp_inputend:
+.inputend:
 	cmp.l	a1,d5
-	bne.s	dp_error		; Input ended before all pixels were decoded.
+	bne.s	.error		; Input ended before all pixels were decoded.
 	moveq	#0,d0
-	bra.s	dp_done
-dp_error:
+	bra.s	.done
+.error:
 	moveq	#-1,d0
-dp_done:
+.done:
 	lea	DP_PALSIZE(sp),sp
 	movem.l	(sp)+,d2-d7/a2-a6
 	rts
@@ -381,7 +381,7 @@ dp_done:
 	; Value to add to previous pixel for each delta opcode ($80-$FF).
 	; Opcode $D2 (zero delta) is reserved and never written by the encoder.
 
-dp_deltatable:
+.deltatable:
 	dc.w	$EF7E,$EF7F,$EF80,$EF81,$EF9E,$EF9F,$EFA0,$EFA1
 	dc.w	$EFBE,$EFBF,$EFC0,$EFC1,$EFDE,$EFDF,$EFE0,$EFE1
 	dc.w	$EFFE,$EFFF,$F000,$F001,$F01E,$F01F,$F020,$F021
@@ -440,42 +440,42 @@ _q_decAlp:
 	moveq	#0,d7
 
 	cmpa.l	a0,a2
-	blo.s	da_error		; pEnd before pBegin.
+	blo.s	.error		; pEnd before pBegin.
 
-da_loop:
+.loop:
 	cmpa.l	a2,a0
-	bhs.s	da_inputend
+	bhs.s	.inputend
 	moveq	#0,d3
 	move.b	(a0)+,d3
-	bmi.s	da_repeat
+	bmi.s	.repeat
 
 	; 0-127 - Copy following 1-128 values verbatim. d3 = count - 1.
 
 	move.l	a2,d1
 	sub.l	a0,d1
 	cmp.l	d3,d1
-	bls.s	da_error		; Reads beyond end of input.
+	bls.s	.error		; Reads beyond end of input.
 	move.l	d6,d1
 	sub.l	a1,d1
 	cmp.l	d3,d1
-	bls.s	da_error		; Writes beyond end of output.
-da_literal:
+	bls.s	.error		; Writes beyond end of output.
+.literal:
 	move.b	(a0)+,(a1)+
-	dbra	d3,da_literal
+	dbra	d3,.literal
 	move.b	-1(a1),d7
-	bra.s	da_loop
+	bra.s	.loop
 
 	; -1 - -128 - Repeat previous value 1-128 times.
 
-da_repeat:
+.repeat:
 	neg.b	d3			; d3 = count, 1-128
 	move.l	d6,d1
 	sub.l	a1,d1
 	cmp.l	d3,d1
-	blo.s	da_error		; Writes beyond end of output.
+	blo.s	.error		; Writes beyond end of output.
 
 	cmp.w	#8,d3
-	blo.s	da_short
+	blo.s	.short_run
 
 	move.b	d7,d4			; Fill with longs for longer runs.
 	lsl.w	#8,d4
@@ -486,33 +486,33 @@ da_repeat:
 
 	move.w	a1,d1
 	btst	#0,d1
-	beq.s	da_even
+	beq.s	.aligned
 	move.b	d7,(a1)+
 	subq.w	#1,d3
-da_even:
+.aligned:
 	move.w	d3,d1
 	lsr.w	#2,d1
 	subq.w	#1,d1
-da_long:
+.fill_long:
 	move.l	d4,(a1)+
-	dbra	d1,da_long
+	dbra	d1,.fill_long
 	and.w	#3,d3
 
-da_short:
+.short_run:
 	subq.w	#1,d3
-	bmi.s	da_loop
-da_byte:
+	bmi.s	.loop
+.fill_byte:
 	move.b	d7,(a1)+
-	dbra	d3,da_byte
-	bra.s	da_loop
+	dbra	d3,.fill_byte
+	bra.s	.loop
 
-da_inputend:
+.inputend:
 	cmp.l	a1,d6
-	bne.s	da_error		; Input ended before all values were decoded.
+	bne.s	.error		; Input ended before all values were decoded.
 	moveq	#0,d0
-	bra.s	da_done
-da_error:
+	bra.s	.done
+.error:
 	moveq	#-1,d0
-da_done:
+.done:
 	movem.l	(sp)+,d3-d4/d6-d7/a2
 	rts

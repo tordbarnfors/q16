@@ -79,7 +79,7 @@ q16_load:
 	move.l	LS_OPEN(a5),a2
 	jsr	(a2)
 	move.l	a0,zfile
-	beq	ql_notmine
+	beq	.notmine
 
 	move.l	zfile,a0			; Read header.
 	lea	header,a1
@@ -87,7 +87,7 @@ q16_load:
 	move.l	LS_READ(a5),a2
 	jsr	(a2)
 	cmp.l	#20,d0
-	bne	ql_closenotmine
+	bne	.closenotmine
 
 	pea	version			; Check and convert header.
 	pea	flags
@@ -99,19 +99,19 @@ q16_load:
 	bsr	q16_readHeader
 	lea	28(sp),sp
 	tst.l	d0
-	bne	ql_closenotmine
+	bne	.closenotmine
 	tst.w	width
-	beq	ql_closenotmine
+	beq	.closenotmine
 	tst.w	height
-	beq	ql_closenotmine
+	beq	.closenotmine
 
 	tst.w	LS_IDENTIFY(a5)			; Only identify?
-	beq.s	ql_load
+	beq.s	.load
 	bsr	ql_close
 	move.l	#1,a0
-	bra	ql_return
+	bra	.return
 
-ql_load:
+.load:
 	moveq	#0,d6
 	move.w	width,d6
 	moveq	#0,d0
@@ -120,36 +120,36 @@ ql_load:
 
 	move.l	pixelbytes,d0		; Read compressed data.
 	add.l	alphabytes,d0
-	bcs	ql_fail
+	bcs	.fail
 	move.l	d0,d3
 	bsr	ql_malloc
 	move.l	a0,file
-	beq	ql_fail
+	beq	.fail
 	move.l	zfile,a0
 	move.l	file,a1
 	move.l	d3,d0
 	move.l	LS_READ(a5),a2
 	jsr	(a2)
 	cmp.l	d3,d0
-	bne	ql_fail
+	bne	.fail
 
 	move.l	#65536,d0			; Allocate buffers.
 	bsr	ql_malloc
 	move.l	a0,table
-	beq	ql_fail
+	beq	.fail
 	move.l	d6,d0
 	add.l	d0,d0
 	bsr	ql_malloc
 	move.l	a0,pixels
-	beq	ql_fail
+	beq	.fail
 	tst.l	alphabytes
-	beq.s	ql_decode
+	beq.s	.decode
 	move.l	d6,d0
 	bsr	ql_malloc
 	move.l	a0,alpha
-	beq	ql_fail
+	beq	.fail
 
-ql_decode:
+.decode:
 	move.l	table,-(sp)
 	bsr	q16_setupStaticTable
 	addq.l	#4,sp
@@ -165,10 +165,10 @@ ql_decode:
 	bsr	q_decPix
 	lea	20(sp),sp
 	tst.l	d0
-	bne	ql_fail
+	bne	.fail
 
 	tst.l	alphabytes			; Alpha
-	beq.s	ql_image
+	beq.s	.image
 	move.l	d6,-(sp)
 	move.l	file,a0
 	add.l	pixelbytes,a0
@@ -180,23 +180,23 @@ ql_decode:
 	bsr	q_decAlp
 	lea	16(sp),sp
 	tst.l	d0
-	bne	ql_fail
+	bne	.fail
 
-ql_image:
+.image:
 	move.l	LS_FILENAME(a5),a0		; Copy file name for the title.
 	move.l	a0,a1
-ql_strlen:
+.strlen:
 	tst.b	(a1)+
-	bne.s	ql_strlen
+	bne.s	.strlen
 	move.l	a1,d0
 	sub.l	a0,d0
 	bsr	ql_malloc
 	move.l	a0,title
-	beq	ql_fail
+	beq	.fail
 	move.l	LS_FILENAME(a5),a1
-ql_strcpy:
+.strcpy:
 	move.b	(a1)+,(a0)+
-	bne.s	ql_strcpy
+	bne.s	.strcpy
 
 	sub.l	a0,a0				; Create image, title set below.
 	move.w	width,d0
@@ -204,7 +204,7 @@ ql_strcpy:
 	move.l	LS_NEWTC(a5),a2
 	jsr	(a2)
 	move.l	a0,d7				; d7 = image
-	beq	ql_fail
+	beq	.fail
 	move.l	title,IMG_TITLE(a0)
 	clr.l	title
 
@@ -214,7 +214,7 @@ ql_strcpy:
 	move.l	pixels,a0
 	move.l	alpha,a2
 	move.l	d6,d5
-ql_convert:
+.convert:
 	move.w	(a0)+,d0
 	move.w	d0,d1				; Red: 5 bits to 8
 	lsr.w	#8,d1
@@ -235,11 +235,11 @@ ql_convert:
 	lsr.w	#5,d4
 	or.w	d4,d3
 	cmp.w	#0,a2
-	beq.s	ql_store
+	beq.s	.store
 	moveq	#0,d4				; Blend against white:
 	move.b	(a2)+,d4			; c = (c * a + 255 * (255 - a) + 127) / 255
 	cmp.b	#255,d4
-	beq.s	ql_store
+	beq.s	.store
 	move.w	#255,d0
 	sub.w	d4,d0
 	mulu.w	#255,d0
@@ -253,27 +253,27 @@ ql_convert:
 	mulu.w	d4,d3
 	add.w	d0,d3
 	divu.w	#255,d3
-ql_store:
+.store:
 	move.b	d1,(a1)+
 	move.b	d2,(a1)+
 	move.b	d3,(a1)+
 	subq.l	#1,d5
-	bne.s	ql_convert
+	bne.s	.convert
 
 	bsr.s	ql_cleanup
 	move.l	d7,a0
-	bra.s	ql_return
+	bra.s	.return
 
-ql_fail:
+.fail:
 	bsr.s	ql_cleanup
 	move.l	#-1,a0				; Q16 picture, but couldn't be loaded.
-	bra.s	ql_return
+	bra.s	.return
 
-ql_closenotmine:
+.closenotmine:
 	bsr.s	ql_close
-ql_notmine:
+.notmine:
 	sub.l	a0,a0
-ql_return:
+.return:
 	movem.l	(sp)+,d3-d7/a2-a6
 	rts
 
@@ -282,24 +282,24 @@ ql_return:
 ql_cleanup:
 	lea	file,a3
 	moveq	#4,d3				; file, pixels, alpha, table, title
-ql_cleanuploop:
+.loop:
 	move.l	(a3),d0
-	beq.s	ql_cleanupnext
+	beq.s	.next
 	clr.l	(a3)
 	move.l	d0,a0
 	move.l	LS_FREE(a5),a2
 	jsr	(a2)
-ql_cleanupnext:
+.next:
 	addq.l	#4,a3
-	dbra	d3,ql_cleanuploop
+	dbra	d3,.loop
 ql_close:
 	move.l	zfile,d0
-	beq.s	ql_closed
+	beq.s	.done
 	clr.l	zfile
 	move.l	d0,a0
 	move.l	LS_CLOSE(a5),a2
 	jsr	(a2)
-ql_closed:
+.done:
 	rts
 
 ;	a0 = ls->memory.malloc( d0 ), preserving a1.

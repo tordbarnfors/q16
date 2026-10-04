@@ -10,7 +10,7 @@
 		
                         Blade of New Core
 
-                           version 1.1
+                           version 1.2
 
 
 
@@ -21,7 +21,7 @@ WHAT IS SHOWER?
 ---------------
 
 Shower is a simple, fast and easy to use Pictureviewer. It supports
-19 different fileformats (13 if you count all the six Degas-formats
+20 different fileformats (14 if you count all the six Degas-formats
 as one) including popular formats as GIF, IFF and IMG.
 
 
@@ -123,6 +123,7 @@ Shower supports the following fileformats:
 .PI2		Degas Mid-res
 .PI3		Degas Hi-res
 .PI9		Extended Degas (320*240 in 256 colors)
+.Q16		Q16 (RGB565 True Color, alpha is blended against black)
 .RAG		RAG-D!
 .RAW		Persistence of Vision (POV) Raytracer output.
 .TGA		Targa (only unpacked/RLE-packed 16/24-bit RGB images)
@@ -315,3 +316,9 @@ Version 1.1:
            with this hardware-bug even if a lot of stuff is installed on
            the VBL.
 
+
+Version 1.2 (2026):
+
+	+ Q16-support added. Q16 is a fast, lossless format for 16-bit
+	   RGB565 pictures with optional 8-bit alpha. Version 1.2 was built
+	   from a disassembly of version 1.1 since the source code was lost.

@@ -3215,6 +3215,230 @@ _L2346:
 	RTS
 
 
+;____ Q16 support, added in v1.2 ____________________________________________
+;
+;	Q16 is RGB565 with optional 8-bit alpha, see q16_lib.h. The picture is
+;	decoded with q16dec.s into a temporary buffer and copied to the screen.
+;	Alpha is blended against black.
+
+;	Header parser. A0 = format table entry.
+
+Q16_HEADER:
+	MOVEA.L	_D2BEA(PC),A1
+	CMPI.L	#20,(_B32C4).L			; File size
+	BLO.W	_L01E0
+	CMPI.L	#'Q565',(A1)
+	BNE.W	_L01E0
+	CMPI.B	#1,4(A1)			; Version
+	BNE.W	_L01E0
+	MOVE.W	6(A1),D0			; Width, little endian
+	ROR.W	#8,D0
+	BEQ.W	_L01E0
+	CMP.W	#$7FF0,D0
+	BHI.W	_L01E0
+	MOVE.W	D0,(_D2708).L			; Real width
+	ADDI.W	#15,D0
+	ANDI.W	#$FFF0,D0
+	MOVE.W	D0,6(A0)			; Width rounded up to 16 pixels
+	MOVE.W	8(A1),D0			; Height
+	ROR.W	#8,D0
+	BEQ.W	_L01E0
+	MOVE.W	D0,8(A0)
+	MOVE.W	#16,$A(A0)			; True color
+
+	MOVE.L	12(A1),D0			; pixelBytes
+	ROR.W	#8,D0
+	SWAP	D0
+	ROR.W	#8,D0
+	MOVE.L	D0,(Q16_PIXELBYTES).L
+	MOVE.L	16(A1),D1			; alphaBytes
+	ROR.W	#8,D1
+	SWAP	D1
+	ROR.W	#8,D1
+	MOVE.L	D1,(Q16_ALPHABYTES).L
+	ADD.L	D1,D0
+	BCS.W	_L01E0
+	ADDI.L	#20,D0
+	BCS.W	_L01E0
+	CMP.L	(_B32C4).L,D0			; Header + data must fit in file.
+	BHI.W	_L01E0
+	RTS
+
+;	Loader. Decodes the picture and copies it to the screen.
+
+Q16_LOAD:
+	BSR.W	_L0F6E				; Calculate screen position.
+	MOVEM.L	D2-D7/A2-A6,-(A7)
+
+	MOVEQ	#0,D7
+	MOVE.W	_D2708(PC),D7			; D7 = width
+	MOVEA.L	_B32CC(PC),A2
+	MOVEQ	#0,D6
+	MOVE.W	8(A2),D6			; D6 = height
+	MOVE.L	D7,D0
+	MULU.L	D6,D0
+	MOVE.L	D0,(Q16_NBPIXELS).L
+
+	MOVE.L	#65536,-(A7)			; Table for q_decPix
+	MOVE.W	#72,-(A7)			; Malloc
+	TRAP	#1
+	ADDQ.L	#6,A7
+	MOVE.L	D0,(Q16_TABLE).L
+	BEQ.W	Q16_FAIL
+
+	MOVE.L	(Q16_NBPIXELS).L,D0		; Pixels
+	ADD.L	D0,D0
+	MOVE.L	D0,-(A7)
+	MOVE.W	#72,-(A7)			; Malloc
+	TRAP	#1
+	ADDQ.L	#6,A7
+	MOVE.L	D0,(Q16_PIXELS).L
+	BEQ.W	Q16_FAIL
+
+	TST.L	(Q16_ALPHABYTES).L		; Alpha
+	BEQ.S	Q16_LOAD_NOALPHA
+	MOVE.L	(Q16_NBPIXELS).L,-(A7)
+	MOVE.W	#72,-(A7)			; Malloc
+	TRAP	#1
+	ADDQ.L	#6,A7
+	MOVE.L	D0,(Q16_ALPHA).L
+	BEQ.W	Q16_FAIL
+Q16_LOAD_NOALPHA:
+
+	MOVE.L	(Q16_TABLE).L,-(A7)
+	BSR.W	q16_setupStaticTable
+	ADDQ.L	#4,A7
+
+	MOVE.L	(Q16_TABLE).L,-(A7)		; Decode pixels.
+	MOVE.L	(Q16_NBPIXELS).L,-(A7)
+	MOVEA.L	_D2BEA(PC),A3
+	LEA	20(A3),A3
+	MOVE.L	A3,D0
+	ADD.L	(Q16_PIXELBYTES).L,D0
+	MOVE.L	D0,-(A7)
+	MOVE.L	A3,-(A7)
+	MOVE.L	(Q16_PIXELS).L,-(A7)
+	BSR.W	q_decPix
+	LEA	20(A7),A7
+	TST.W	D0
+	BNE.W	Q16_FAIL
+
+	TST.L	(Q16_ALPHABYTES).L		; Decode alpha and blend.
+	BEQ.S	Q16_LOAD_COPY
+	MOVE.L	(Q16_NBPIXELS).L,-(A7)
+	ADDA.L	(Q16_PIXELBYTES).L,A3
+	MOVE.L	A3,D0
+	ADD.L	(Q16_ALPHABYTES).L,D0
+	MOVE.L	D0,-(A7)
+	MOVE.L	A3,-(A7)
+	MOVE.L	(Q16_ALPHA).L,-(A7)
+	BSR.W	q_decAlp
+	LEA	16(A7),A7
+	TST.W	D0
+	BNE.W	Q16_FAIL
+	BSR.W	Q16_BLEND
+
+Q16_LOAD_COPY:
+	MOVEA.L	(Q16_PIXELS).L,A0
+	MOVEA.L	_B4F4E(PC),A1
+	MOVEA.L	_B32CC(PC),A2
+	MOVEQ	#0,D1
+	MOVE.W	_B36E8(PC),D1			; Screen width
+	ADD.L	D1,D1				; D1 = bytes per screen line
+	MOVE.W	6(A2),D5
+	SUB.W	D7,D5				; D5 = padding up to 16 pixels
+	SUBQ.W	#1,D7
+	MOVE.W	D6,D3
+	SUBQ.W	#1,D3
+Q16_LOAD_LINE:
+	MOVEA.L	A1,A3
+	MOVE.W	D7,D2
+Q16_LOAD_PIXEL:
+	MOVE.W	(A0)+,(A3)+
+	DBRA	D2,Q16_LOAD_PIXEL
+	MOVE.W	D5,D2
+	BRA.S	Q16_LOAD_PADTEST
+Q16_LOAD_PAD:
+	CLR.W	(A3)+
+Q16_LOAD_PADTEST:
+	DBRA	D2,Q16_LOAD_PAD
+	ADDA.L	D1,A1
+	DBRA	D3,Q16_LOAD_LINE
+
+	BSR.S	Q16_FREE
+	MOVEM.L	(A7)+,D2-D7/A2-A6
+	RTS
+
+Q16_FAIL:
+	BSR.S	Q16_FREE
+	BRA.W	_L01E0
+
+;	Frees the temporary buffers.
+
+Q16_FREE:
+	LEA	(Q16_TABLE).L,A3
+	MOVEQ	#2,D3
+Q16_FREE_LOOP:
+	MOVE.L	(A3),D0
+	BEQ.S	Q16_FREE_NEXT
+	CLR.L	(A3)
+	MOVE.L	D0,-(A7)
+	MOVE.W	#73,-(A7)			; Mfree
+	TRAP	#1
+	ADDQ.L	#6,A7
+Q16_FREE_NEXT:
+	ADDQ.L	#4,A3
+	DBRA	D3,Q16_FREE_LOOP
+	RTS
+
+;	Blends the pixels against black using the alpha channel.
+
+Q16_BLEND:
+	MOVEM.L	D2-D7,-(A7)
+	MOVEA.L	(Q16_PIXELS).L,A0
+	MOVEA.L	(Q16_ALPHA).L,A1
+	MOVE.L	(Q16_NBPIXELS).L,D7
+	MOVEQ	#11,D6
+Q16_BLEND_LOOP:
+	MOVEQ	#0,D0
+	MOVE.B	(A1)+,D0
+	CMP.B	#255,D0
+	BEQ.S	Q16_BLEND_OPAQUE
+	TST.B	D0
+	BEQ.S	Q16_BLEND_CLEAR
+	ADDQ.W	#1,D0				; Multiply by (alpha + 1) / 256.
+	MOVE.W	(A0),D1
+	MOVE.W	D1,D2				; Red
+	LSR.W	D6,D2
+	MULU.W	D0,D2
+	LSR.W	#8,D2
+	LSL.W	D6,D2
+	MOVE.W	D1,D3				; Green
+	LSR.W	#5,D3
+	ANDI.W	#63,D3
+	MULU.W	D0,D3
+	LSR.W	#8,D3
+	LSL.W	#5,D3
+	OR.W	D3,D2
+	ANDI.W	#31,D1				; Blue
+	MULU.W	D0,D1
+	LSR.W	#8,D1
+	OR.W	D1,D2
+	MOVE.W	D2,(A0)+
+	BRA.S	Q16_BLEND_NEXT
+Q16_BLEND_CLEAR:
+	CLR.W	(A0)+
+	BRA.S	Q16_BLEND_NEXT
+Q16_BLEND_OPAQUE:
+	ADDQ.L	#2,A0
+Q16_BLEND_NEXT:
+	SUBQ.L	#1,D7
+	BNE.S	Q16_BLEND_LOOP
+	MOVEM.L	(A7)+,D2-D7
+	RTS
+
+	INCLUDE	"../m68k/q16dec.s"
+
 	SECTION DATA
 _D2358:
 	dc.b	$FF,$FF
@@ -3300,7 +3524,12 @@ _D237A:
 	dc.b	$00,$00,$FF,$FF,$FF,$FF,$FF,$FF
 	dc.l	_L100A
 	dc.l	_L0FC4
-	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+	dc.b	".Q16",$00,$00,$FF,$FF,$FF,$FF,$FF,$FF	; Q16, added in v1.2
+	dc.l	Q16_LOAD
+	dc.l	Q16_HEADER
+	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+	dc.b	$00,$00,$00,$00				; End of table
 _D267E:
 	dc.b	$00,$00,$00,$00,$00,$60,$00,$00,$00,$C0,$00,$00,$00,$00,$00,$00
 	dc.b	$01,$20,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -3559,7 +3788,7 @@ _D3086:
 	dc.b	$0F,$FF,$0F,$00,$00,$F0,$0F,$F0,$00,$0F,$0F,$0F,$00,$FF,$0D,$DD
 	dc.b	$04,$44,$05,$00,$00,$50,$05,$50,$00,$05,$05,$05,$00,$55,$00,$00
 STR_THE_SHOWER_PICTURE_V:
-	dc.b	"The SHOWER picture-viewer v1.1.",$0A,$0D
+	dc.b	"The SHOWER picture-viewer v1.2.",$0A,$0D
 	dc.b	"-------------------------------",$0A,$0D,$0A
 	dc.b	"Functions & Controls",$0D,$0A,"--------------------",$0D,$0A
 	dc.b	$0A,"Mouse &",$0D,$0A
@@ -3571,7 +3800,8 @@ STR_THE_SHOWER_PICTURE_V:
 	dc.b	"F2                   Switch between dark/bright frame",$0D,$0A
 	dc.b	$0A,"Contr + Alt + F10    Save screen/color-dump",$0D,$0A,$0A
 	dc.b	$0A,"Written by Blade of New Core in 100% assembler.",$0D,$0A
-	dc.b	"GIF-Depacker by Sascha Springer.",$0D,$0A,$00
+	dc.b	"GIF-Depacker by Sascha Springer.",$0D,$0A
+	dc.b	"Q16 support added in 2026.",$0D,$0A,$00
 	dc.b	$00
 
 	SECTION BSS
@@ -3678,4 +3908,16 @@ _B8F72:
 _B8F74:
 	ds.b	4
 _B8F78:
+	ds.b	4
+Q16_PIXELBYTES:
+	ds.b	4
+Q16_ALPHABYTES:
+	ds.b	4
+Q16_NBPIXELS:
+	ds.b	4
+Q16_TABLE:					; Q16_TABLE, Q16_PIXELS and Q16_ALPHA
+	ds.b	4				; must stay together, see Q16_FREE.
+Q16_PIXELS:
+	ds.b	4
+Q16_ALPHA:
 	ds.b	4

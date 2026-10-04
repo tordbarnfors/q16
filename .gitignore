@@ -56,3 +56,6 @@ dkms.conf
 
 # Benchmark build output
 bench/FALCBNCH.TOS
+
+# Shower build output
+shower/SHOWER.TTP

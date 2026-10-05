@@ -95,7 +95,7 @@ q16_load:
 	pea		height
 	pea		width
 	pea		header
-	bsr		q16_readHeader
+	bsr		q_rdHdr
 	lea		28(sp),sp
 	tst.l	d0
 	bne		.closenotmine

@@ -144,7 +144,7 @@ static unsigned long	g_pixelBytes, g_alphaBytes;
 static int q16_header( void )
 {
 	unsigned char flags, version;
-	if( q16_readHeader( (q16_fileheader*) g_file, &g_q16w, &g_q16h, &g_pixelBytes, &g_alphaBytes, &flags, &version ) != 0 )
+	if( q_rdHdr( (q16_fileheader*) g_file, &g_q16w, &g_q16h, &g_pixelBytes, &g_alphaBytes, &flags, &version ) != 0 )
 		return -1;
 	if( sizeof(q16_fileheader) + g_pixelBytes + g_alphaBytes > (unsigned long) g_size || (long) g_q16w * g_q16h > MAX_PIXELS )
 		return -1;

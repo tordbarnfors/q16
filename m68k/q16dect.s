@@ -14,8 +14,8 @@
 ;	so it only pays off for large images or when many images are decoded
 ;	with the same table; see ../bench/README.md.
 ;
-;	Use either this file or q16dec.s, not both: both contain
-;	q16_version(), q16_readHeader() and q_decAlp().
+;	Use either this file or q16dec.s, not both: both contain q_vers(),
+;	q_rdHdr() and q_decAlp().
 ;
 ;	Devpac syntax. Uses 68020+ addressing modes and unaligned word reads,
 ;	so a 68000 is not supported.
@@ -41,19 +41,19 @@
 
 	section	text
 
-	xdef	q16_version,_q16_version
+	xdef	q_vers,_q_vers
 	xdef	q_genTbl,_q_genTbl
-	xdef	q16_readHeader,_q16_readHeader
+	xdef	q_rdHdr,_q_rdHdr
 	xdef	q_decPxT,_q_decPxT
 	xdef	q_decAlp,_q_decAlp
 
 
-;____ q16_version() ______________________________________________________
+;____ q_vers() ___________________________________________________________
 ;
-;	int q16_version( void );
+;	int q_vers( void );
 
-q16_version:
-_q16_version:
+q_vers:
+_q_vers:
 	moveq	#1,d0
 	rts
 
@@ -88,12 +88,12 @@ _q_genTbl:
 	rts
 
 
-;____ q16_readHeader() ___________________________________________________
+;____ q_rdHdr() __________________________________________________________
 ;
-;	int q16_readHeader( const q16_fileheader * header,
-;	                    unsigned short * width, unsigned short * height,
-;	                    unsigned long * pixelBytes, unsigned long * alphaBytes,
-;	                    unsigned char * flags, unsigned char * version );
+;	int q_rdHdr( const q16_fileheader * header,
+;	             unsigned short * width, unsigned short * height,
+;	             unsigned long * pixelBytes, unsigned long * alphaBytes,
+;	             unsigned char * flags, unsigned char * version );
 ;
 ;	Returns 0 if ok, -1 if not a Q16 file (all values set to 0) or -2 if
 ;	the version is unsupported (values are still filled in).
@@ -106,8 +106,8 @@ RH_ALPHABYTES		equ		20
 RH_FLAGS			equ		24
 RH_VERSION			equ		28
 
-q16_readHeader:
-_q16_readHeader:
+q_rdHdr:
+_q_rdHdr:
 	move.l	RH_HEADER(sp),a0
 	cmp.l	#$51353635,(a0)						; "Q565"
 	bne.s	.not_q16

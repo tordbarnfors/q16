@@ -21,7 +21,7 @@
 *               pays off for large images or when the table is reused for
 *               many images. See ../bench/README.md.
 *
-*   Both contain q16_version(), q16_readHeader() and q_decAlp().
+*   Both contain q_vers(), q_rdHdr() and q_decAlp().
 *
 *   Typical use:
 *
@@ -31,8 +31,8 @@
 *       unsigned long pixelBytes, alphaBytes;
 *       unsigned char flags, version;
 *
-*       if( q16_readHeader( (q16_fileheader*) pFile, &width, &height,
-*                           &pixelBytes, &alphaBytes, &flags, &version ) == 0 )
+*       if( q_rdHdr( (q16_fileheader*) pFile, &width, &height,
+*                    &pixelBytes, &alphaBytes, &flags, &version ) == 0 )
 *       {
 *           unsigned long nbPixels = (unsigned long) width * height;
 *           unsigned char * pPixelData = pFile + sizeof(q16_fileheader);
@@ -81,17 +81,17 @@ typedef struct q16_fileheader_struct
 
 /* Returns version of the file format supported by the decoder. */
 
-int Q16CALL		q16_version( void );
+int Q16CALL		q_vers( void );
 
 /* Reads the header, converting values from little endian.
 *  Returns 0 if ok, -1 if not a Q16 file (all values set to 0) or -2 if
 *  the version is unsupported (values are still filled in).
 */
 
-int Q16CALL		q16_readHeader( const q16_fileheader * header,
-								unsigned short * width, unsigned short * height,
-								unsigned long * pixelBytes, unsigned long * alphaBytes,
-								unsigned char * flags, unsigned char * version );
+int Q16CALL		q_rdHdr( const q16_fileheader * header,
+						 unsigned short * width, unsigned short * height,
+						 unsigned long * pixelBytes, unsigned long * alphaBytes,
+						 unsigned char * flags, unsigned char * version );
 
 /* Decodes the complete pixel data between pBegin and pEnd into exactly
 *  nbPixels big endian RGB565 pixels at pDest.

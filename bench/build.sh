@@ -20,11 +20,11 @@ $VASM -quiet -devpac -Faout -o q16dec.o ../m68k/q16dec.s
 $VASM -quiet -devpac -Faout -o q16enc.o ../m68k/q16enc.s
 $VASM -quiet -devpac -Faout -o q16dect.o ../m68k/q16dect.s
 $VASM -quiet -devpac -Faout -o q16enct.o ../m68k/q16enct.s
-# The table versions contain the same q16_version, q16_readHeader, q_decAlp,
-# q_wrtHdr and q_encAlp as the default ones. Make their copies local
-# so all four can be linked together.
+# The table versions contain the same q_vers, q_rdHdr, q_decAlp, q_wrtHdr
+# and q_encAlp as the default ones. Make their copies local so all four can
+# be linked together.
 for f in q16dect.o q16enct.o; do
-	m68k-atari-mint-objcopy -L q16_version -L _q16_version -L q16_readHeader -L _q16_readHeader \
+	m68k-atari-mint-objcopy -L q_vers -L _q_vers -L q_rdHdr -L _q_rdHdr \
 		-L q_decAlp -L _q_decAlp -L q_wrtHdr -L _q_wrtHdr -L q_encAlp -L _q_encAlp $f
 done
 $VASM -quiet -devpac -m68030 -Faout -o natfeats.o natfeats.s

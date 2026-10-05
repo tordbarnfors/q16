@@ -368,7 +368,7 @@ static int enc_q16_asm( void )
 	unsigned char * p = e_buf + sizeof(q16_fileheader);
 	unsigned char * pAlpha = q_encPix( p, e_pixels, e_pixels + n );
 	unsigned char * pEnd = e_alpha ? q_encAlp( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
-	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
+	q_wrtHdr( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
 	e_len = pEnd - e_buf;
 	return 0;
 }
@@ -379,7 +379,7 @@ static int enc_q16_asmT( void )
 	unsigned char * p = e_buf + sizeof(q16_fileheader);
 	unsigned char * pAlpha = q_encPxT( p, e_pixels, e_pixels + n, g_staticTable );
 	unsigned char * pEnd = e_alpha ? q_encAlp( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
-	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
+	q_wrtHdr( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
 	e_len = pEnd - e_buf;
 	return 0;
 }
@@ -397,7 +397,7 @@ static int enc_q16_c( void )
 	else
 		pAlpha = c_q16_compressPixels( p, e_pixels, e_pixels + n, instance );
 	pEnd = e_alpha ? c_q16_compressAlpha( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
-	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
+	q_wrtHdr( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
 	e_len = pEnd - e_buf;
 	return 0;
 }
@@ -632,10 +632,10 @@ int main( void )
 	for( i = 0 ; i < 20 ; i++ )
 		c_q16_setupStaticTable( g_staticTable );
 	t0 = clock() - t0;
-	out( "q16_setupStaticTable: C %ld.%02ld ms, ", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
+	out( "Table setup: C %ld.%02ld ms, ", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
 	t0 = clock();
 	for( i = 0 ; i < 20 ; i++ )
-		q16_setupStaticTable( g_staticTable );
+		q_genTbl( g_staticTable );
 	t0 = clock() - t0;
 	out( "asm %ld.%02ld ms\n\n", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
 

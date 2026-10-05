@@ -250,7 +250,7 @@ q16_save:
 	move.l	d6,-(sp)
 	move.l	d7,-(sp)
 	move.l	out,-(sp)
-	bsr		q16_writeHeader
+	bsr		q_wrtHdr
 	lea		24(sp),sp
 
 	; Write the file.

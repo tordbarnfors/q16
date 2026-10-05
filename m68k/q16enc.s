@@ -27,17 +27,17 @@
 
 	section	text
 
-	xdef	q16_writeHeader,_q16_writeHeader
+	xdef	q_wrtHdr,_q_wrtHdr
 	xdef	q_encPix,_q_encPix
 	xdef	q_encAlp,_q_encAlp
 
 
-;____ q16_writeHeader() __________________________________________________
+;____ q_wrtHdr() _________________________________________________________
 ;
-;	void q16_writeHeader( q16_fileheader * header,
-;	                      unsigned long width, unsigned long height,
-;	                      unsigned long pixelBytes, unsigned long alphaBytes,
-;	                      unsigned long flags );
+;	void q_wrtHdr( q16_fileheader * header,
+;	               unsigned long width, unsigned long height,
+;	               unsigned long pixelBytes, unsigned long alphaBytes,
+;	               unsigned long flags );
 
 WH_HEADER			equ		4
 WH_WIDTH			equ		8
@@ -46,8 +46,8 @@ WH_PIXELBYTES		equ		16
 WH_ALPHABYTES		equ		20
 WH_FLAGS			equ		24
 
-q16_writeHeader:
-_q16_writeHeader:
+q_wrtHdr:
+_q_wrtHdr:
 	move.l	WH_HEADER(sp),a0
 	move.l	#$51353635,(a0)						; "Q565"
 	move.b	#1,4(a0)							; Version

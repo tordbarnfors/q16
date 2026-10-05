@@ -7,8 +7,9 @@ alpha with `q_decAlp()`, and reads the header with `q16_readHeader()`.
 
 `q16enc.s` is the matching encoder, with `q16enc.h` as C interface. It
 compresses complete images, pixels with `q_encPix()` and alpha with
-`q_encAlp()`, and writes the header with `q16_writeHeader()`. The output is
-byte-identical to q16_lib.c.
+`q_encAlp()`, and writes the header with `q_wrtHdr()`. The output is
+byte-identical to q16_lib.c (where `q_wrtHdr()` is called
+`q16_writeHeader()`).
 
 Both calculate the palette index of each new pixel with the hash formula.
 `q16dect.s` and `q16enct.s` are alternatives that look it up in a 64 KB
@@ -20,17 +21,16 @@ table instead:
 | `q16enc.s` | `q16enct.s` | `q_encPix()` / `q_encPxT()` |
 
 The table versions take the table as an extra last argument. It's set up by
-`q16_setupStaticTable()` in `q16dect.s` and can be shared by all calls, also
-between `q_decPxT()` and `q_encPxT()`. They are faster per pixel, but setting
-up the table takes 107 ms on a Falcon, so they only pay off when the table is
-reused, when decoding a picture with more than about 140,000 literal and
-delta pixels (a photo of about 640x640) or when encoding a photo of more
-than about 100,000-165,000 pixels, see
+`q_genTbl()` in `q16dect.s` (`q16_setupStaticTable()` in q16_lib.c) and can
+be shared by all calls, also between `q_decPxT()` and `q_encPxT()`. They are
+faster per pixel, but setting up the table takes 107 ms on a Falcon, so they
+only pay off when the table is reused, when decoding a picture with more
+than about 140,000 literal and delta pixels (a photo of about 640x640) or
+when encoding a photo of more than about 100,000-165,000 pixels, see
 [../bench](../bench/README.md#static-table-or-hash-formula). Use either the
 default files or the table files, not both: each contains its own copy of
 `q16_version()`, `q16_readHeader()` and `q_decAlp()` (decoders) or
-`q16_writeHeader()` and `q_encAlp()` (encoders). All four give identical
-results.
+`q_wrtHdr()` and `q_encAlp()` (encoders). All four give identical results.
 
 * C-callable from GCC, VBCC, Lattice C, Pure C and AHCC. All arguments are
   passed on the stack (the header declares the functions `cdecl` for Pure C
@@ -67,6 +67,6 @@ and the same for the other files.
 
 Every function is exported both with and without a leading underscore.
 
-The decode and encode functions are named `q_decPix`, `q_decPxT`,
-`q_decAlp`, `q_encPix`, `q_encPxT` and `q_encAlp` to fit within the 8
+The functions are named `q_decPix`, `q_decPxT`, `q_decAlp`, `q_encPix`,
+`q_encPxT`, `q_encAlp`, `q_genTbl` and `q_wrtHdr` to fit within the 8
 character symbol names of the DRI object format.

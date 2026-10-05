@@ -18,8 +18,8 @@
 *
 *       pAlphaData = q_encPix( pPixelData, pPixels, pPixels + nbPixels );
 *       pEnd = pAlpha ? q_encAlp( pAlphaData, pAlpha, pAlpha + nbPixels ) : pAlphaData;
-*       q16_writeHeader( (q16_fileheader*) pFile, width, height,
-*                        pAlphaData - pPixelData, pEnd - pAlphaData, 0 );
+*       q_wrtHdr( (q16_fileheader*) pFile, width, height,
+*                 pAlphaData - pPixelData, pEnd - pAlphaData, 0 );
 *
 *       // Save pEnd - pFile bytes from pFile.
 *
@@ -29,11 +29,11 @@
 *               the hash formula. This is the one to use normally.
 *
 *   q16enct.s   q_encPxT() looks the palette index up in a 64 KB table set
-*               up by q16_setupStaticTable(), which is in q16dect.s. Faster
-*               per pixel, so link with q16dect.s (not q16dec.s) and use
+*               up by q_genTbl(), which is in q16dect.s. Faster per pixel,
+*               so link with q16dect.s (not q16dec.s) and use
 *               q_encPxT( ..., pStaticTable ) when the table is wanted.
 *
-*   Both contain q16_writeHeader() and q_encAlp().
+*   Both contain q_wrtHdr() and q_encAlp().
 *
 *=========================================================================*/
 
@@ -46,10 +46,10 @@
 
 /* Writes the header, converting values to little endian. */
 
-void Q16CALL			q16_writeHeader( q16_fileheader * header,
-										 unsigned long width, unsigned long height,
-										 unsigned long pixelBytes, unsigned long alphaBytes,
-										 unsigned long flags );
+void Q16CALL			q_wrtHdr( q16_fileheader * header,
+								  unsigned long width, unsigned long height,
+								  unsigned long pixelBytes, unsigned long alphaBytes,
+								  unsigned long flags );
 
 /* Compresses the big endian RGB565 pixels between pBegin and pEnd into pDest.
 *  Returns the end of the compressed data. In q16enc.s.

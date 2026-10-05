@@ -8,11 +8,11 @@
 ;	C interface and ../q16_lib.h for a description of the file format.
 ;
 ;	This is the table version of q16dec.s. q_decPxT() looks up the palette
-;	index of each new pixel in a 64 KB table that q16_setupStaticTable()
-;	fills in, instead of calculating it like q_decPix() in q16dec.s. It is
-;	faster per pixel, but the table takes 64 KB and about 100 ms to set up
-;	on a Falcon, so it only pays off for large images or when many images
-;	are decoded with the same table; see ../bench/README.md.
+;	index of each new pixel in a 64 KB table that q_genTbl() fills in,
+;	instead of calculating it like q_decPix() in q16dec.s. It is faster per
+;	pixel, but the table takes 64 KB and about 100 ms to set up on a Falcon,
+;	so it only pays off for large images or when many images are decoded
+;	with the same table; see ../bench/README.md.
 ;
 ;	Use either this file or q16dec.s, not both: both contain
 ;	q16_version(), q16_readHeader() and q_decAlp().
@@ -42,7 +42,7 @@
 	section	text
 
 	xdef	q16_version,_q16_version
-	xdef	q16_setupStaticTable,_q16_setupStaticTable
+	xdef	q_genTbl,_q_genTbl
 	xdef	q16_readHeader,_q16_readHeader
 	xdef	q_decPxT,_q_decPxT
 	xdef	q_decAlp,_q_decAlp
@@ -58,16 +58,16 @@ _q16_version:
 	rts
 
 
-;____ q16_setupStaticTable() _____________________________________________
+;____ q_genTbl() _________________________________________________________
 ;
-;	void q16_setupStaticTable( unsigned char staticTable[65536] );
+;	void q_genTbl( unsigned char staticTable[65536] );
 ;
 ;	Generates the table deciding which of the 64 palette entries each
 ;	pixel goes into: (p + (p >> 3) + (p >> 4) + (p >> 10)) & 63
 ;	Needed by q_decPxT() and q_encPxT() (q16enct.s).
 
-q16_setupStaticTable:
-_q16_setupStaticTable:
+q_genTbl:
+_q_genTbl:
 	move.l	4(sp),a0
 	move.l	d2,-(sp)
 	moveq	#0,d0								; d0 = pixel value p, loops through 0-65535
@@ -178,7 +178,7 @@ _q16_readHeader:
 ;	nbPixels big endian RGB565 pixels at pDest.
 ;
 ;	Same as q_decPix() in q16dec.s, but looks up the palette index of
-;	each new pixel in staticTable, set up by q16_setupStaticTable().
+;	each new pixel in staticTable, set up by q_genTbl().
 ;
 ;	Returns 0 if ok, -1 if the stream is corrupt or doesn't decode into
 ;	exactly nbPixels pixels. Never reads beyond pEnd nor writes beyond

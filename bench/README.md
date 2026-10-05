@@ -133,8 +133,8 @@ Encoding the pixels decoded from NAME.PNG (RGB565). JPEG encodes them as 8-bit R
 
 Literal and delta pixels are stored in the 64-entry palette at the index
 `(p + (p >> 3) + (p >> 4) + (p >> 10)) & 63`. The default functions calculate
-it, the T functions look it up in a 64 KB table that `q16_setupStaticTable()`
-fills in:
+it, the T functions look it up in a 64 KB table that `q_genTbl()` (asm) or
+`q16_setupStaticTable()` (C) fills in:
 
 | | Calculated (default) | Static table |
 |---|---|---|

@@ -16,10 +16,10 @@
 *               with the hash formula. This is the one to use normally.
 *
 *   q16dect.s   q_decPxT() looks the palette index up in a 64 KB table
-*               set up by q16_setupStaticTable(). Faster per pixel, but the
-*               table takes 64 KB and about 100 ms to set up on a Falcon,
-*               so it only pays off for large images or when the table is
-*               reused for many images. See ../bench/README.md.
+*               set up by q_genTbl(). Faster per pixel, but the table takes
+*               64 KB and about 100 ms to set up on a Falcon, so it only
+*               pays off for large images or when the table is reused for
+*               many images. See ../bench/README.md.
 *
 *   Both contain q16_version(), q16_readHeader() and q_decAlp().
 *
@@ -49,9 +49,9 @@
 *   The caller should check that the file is at least
 *   sizeof(q16_fileheader) + pixelBytes + alphaBytes bytes long.
 *
-*   With q16dect.s, call q16_setupStaticTable( pStaticTable ) once on a
-*   65536 byte buffer and use q_decPxT( ..., nbPixels, pStaticTable )
-*   instead of q_decPix().
+*   With q16dect.s, call q_genTbl( pStaticTable ) once on a 65536 byte
+*   buffer and use q_decPxT( ..., nbPixels, pStaticTable ) instead of
+*   q_decPix().
 *
 *=========================================================================*/
 
@@ -108,7 +108,7 @@ int Q16CALL		q_decPix( unsigned short * pDest,
 *  In q16dect.s.
 */
 
-void Q16CALL	q16_setupStaticTable( unsigned char staticTable[65536] );
+void Q16CALL	q_genTbl( unsigned char staticTable[65536] );
 
 /* Same as q_decPix(), but looks up the palette index of each new pixel in
 *  the static table. In q16dect.s.

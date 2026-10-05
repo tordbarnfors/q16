@@ -1,15 +1,21 @@
 ;=========================================================================
 ;
-;	q16dec.s - Q16 image decoder for 68020/68030 (Atari Falcon, TT etc.)
+;	q16dect.s - Q16 image decoder for 68020/68030 (Atari Falcon, TT etc.)
+;	            using a 64 KB static table.
 ;
 ;	Decodes Q16 images (RGB565 pixels with optional 8-bit alpha) that
 ;	have been loaded into memory in their entirety. See q16dec.h for the
 ;	C interface and ../q16_lib.h for a description of the file format.
 ;
-;	The palette index of each new pixel is calculated with the hash
-;	formula. q16dect.s is an alternative that looks it up in a 64 KB
-;	table instead, which is faster for large images; see
-;	../bench/README.md. Use either this file or q16dect.s, not both.
+;	This is the table version of q16dec.s. q_decPxT() looks up the palette
+;	index of each new pixel in a 64 KB table that q16_setupStaticTable()
+;	fills in, instead of calculating it like q_decPix() in q16dec.s. It is
+;	faster per pixel, but the table takes 64 KB and about 100 ms to set up
+;	on a Falcon, so it only pays off for large images or when many images
+;	are decoded with the same table; see ../bench/README.md.
+;
+;	Use either this file or q16dec.s, not both: both contain
+;	q16_version(), q16_readHeader() and q_decAlp().
 ;
 ;	Devpac syntax. Uses 68020+ addressing modes and unaligned word reads,
 ;	so a 68000 is not supported.
@@ -36,8 +42,9 @@
 	section	text
 
 	xdef	q16_version,_q16_version
+	xdef	q16_setupStaticTable,_q16_setupStaticTable
 	xdef	q16_readHeader,_q16_readHeader
-	xdef	q_decPix,_q_decPix
+	xdef	q_decPxT,_q_decPxT
 	xdef	q_decAlp,_q_decAlp
 
 
@@ -48,6 +55,36 @@
 q16_version:
 _q16_version:
 	moveq	#1,d0
+	rts
+
+
+;____ q16_setupStaticTable() _____________________________________________
+;
+;	void q16_setupStaticTable( unsigned char staticTable[65536] );
+;
+;	Generates the table deciding which of the 64 palette entries each
+;	pixel goes into: (p + (p >> 3) + (p >> 4) + (p >> 10)) & 63
+;	Needed by q_decPxT() and q_encPxT() (q16enct.s).
+
+q16_setupStaticTable:
+_q16_setupStaticTable:
+	move.l	4(sp),a0
+	move.l	d2,-(sp)
+	moveq	#0,d0								; d0 = pixel value p, loops through 0-65535
+.loop:
+	move.w	d0,d1
+	move.w	d0,d2
+	lsr.w	#3,d2
+	add.w	d2,d1								; p + (p >> 3)
+	lsr.w	#1,d2
+	add.w	d2,d1								;   + (p >> 4)
+	lsr.w	#6,d2
+	add.w	d2,d1								;   + (p >> 10)
+	and.b	#63,d1
+	move.b	d1,(a0)+
+	addq.w	#1,d0
+	bne.s	.loop
+	move.l	(sp)+,d2
 	rts
 
 
@@ -129,37 +166,19 @@ _q16_readHeader:
 	rts
 
 
-;	dp_hash pixel
+;____ q_decPxT() ________________________________________________________
 ;
-;	Sets d2 to the palette index of pixel (a data register), calculated
-;	with the hash formula (p + (p >> 3) + (p >> 4) + (p >> 10)) & 63.
-;	Uses d4.
-
-dp_hash				macro
-	move.w	\1,d2
-	move.w	\1,d4
-	lsr.w	#3,d4
-	add.w	d4,d2								; p + (p >> 3)
-	lsr.w	#1,d4
-	add.w	d4,d2								;   + (p >> 4)
-	lsr.w	#6,d4
-	add.w	d4,d2								;   + (p >> 10)
-	and.w	#63,d2								; Bits 8-31 of d2 stay 0.
-	endm
-
-
-;____ q_decPix() ________________________________________________________
-;
-;	int q_decPix( unsigned short * pDest,
+;	int q_decPxT( unsigned short * pDest,
 ;	              const unsigned char * pBegin,
 ;	              const unsigned char * pEnd,
-;	              unsigned long nbPixels );
+;	              unsigned long nbPixels,
+;	              const unsigned char staticTable[65536] );
 ;
 ;	Decodes the complete pixel stream between pBegin and pEnd into exactly
 ;	nbPixels big endian RGB565 pixels at pDest.
 ;
-;	The palette index of each new pixel is calculated with the hash
-;	formula. q_decPxT() in q16dect.s looks it up in a table instead.
+;	Same as q_decPix() in q16dec.s, but looks up the palette index of
+;	each new pixel in staticTable, set up by q16_setupStaticTable().
 ;
 ;	Returns 0 if ok, -1 if the stream is corrupt or doesn't decode into
 ;	exactly nbPixels pixels. Never reads beyond pEnd nor writes beyond
@@ -171,30 +190,31 @@ dp_hash				macro
 ;	d1 = literal pixel (bits 16-31 always 0)
 ;	d2 = palette index (bits 8-31 always 0)
 ;	d3 = temp
-;	d4 = temp, also used by dp_hash
+;	d4 = temp
 ;	d5 = end of output
 ;	d6 = opcodes left to decode in fast loop before next safety check
 ;	d7 = last pixel (bits 16-31 always 0)
 ;	a0 = read pointer
 ;	a1 = write pointer
-;	a2 = not used
+;	a2 = static table (pixel to palette index)
 ;	a3 = palette (64 words on the stack)
 ;	a4 = delta table - $80*2, so it can be indexed by delta opcodes
 ;	a5 = palette - $40*2, so it can be indexed by index opcodes
 ;	a6 = end of input
 
 DP_PALSIZE			equ		128
-DP_ARGS				equ		4+10*4+DP_PALSIZE	; Return address, saved registers, palette.
+DP_ARGS				equ		4+11*4+DP_PALSIZE	; Return address, saved registers, palette.
 
-q_decPix:
-_q_decPix:
-	movem.l	d2-d7/a3-a6,-(sp)
+q_decPxT:
+_q_decPxT:
+	movem.l	d2-d7/a2-a6,-(sp)
 	lea		-DP_PALSIZE(sp),sp
 
 	move.l	DP_ARGS(sp),a1						; pDest
 	move.l	DP_ARGS+4(sp),a0					; pBegin
 	move.l	DP_ARGS+8(sp),a6					; pEnd
 	move.l	DP_ARGS+12(sp),d5					; nbPixels
+	move.l	DP_ARGS+16(sp),a2					; staticTable
 
 	cmpa.l	a0,a6
 	blo		.error								; pEnd before pBegin.
@@ -258,7 +278,7 @@ _q_decPix:
 	move.w	(a0)+,d1
 	ror.w	#8,d1
 	move.w	d1,(a1)+
-	dp_hash	d1
+	move.b	(a2,d1.l),d2
 	move.w	d1,(a3,d2.w*2)
 	dbra	d3,.literal
 	move.w	d1,d7
@@ -270,10 +290,10 @@ _q_decPix:
 .delta:
 	add.w	(a4,d0.w*2),d7
 	move.w	d7,(a1)+
-	dp_hash	d7
+	move.b	(a2,d7.l),d2
 	move.w	d7,(a3,d2.w*2)
 	dbra	d6,.loop
-	bra.w	.refill
+	bra.s	.refill
 
 	; 01xxxxxx - Pixel from palette.
 
@@ -281,7 +301,7 @@ _q_decPix:
 	move.w	(a5,d0.w*2),d7
 	move.w	d7,(a1)+
 	dbra	d6,.loop
-	bra.w	.refill
+	bra.s	.refill
 
 	; 001xxxxx - Repeat previous pixel (1-32).
 
@@ -304,7 +324,7 @@ _q_decPix:
 
 .slow:
 	cmpa.l	a6,a0
-	bhs.w	.inputend
+	bhs.s	.inputend
 	move.b	(a0)+,d0
 	bmi.s	.slowdelta
 	btst	#6,d0
@@ -334,7 +354,7 @@ _q_decPix:
 	move.w	(a0)+,d1
 	ror.w	#8,d1
 	move.w	d1,(a1)+
-	dp_hash	d1
+	move.b	(a2,d1.l),d2
 	move.w	d1,(a3,d2.w*2)
 	dbra	d3,.slowliteral
 	move.w	d1,d7
@@ -350,16 +370,16 @@ _q_decPix:
 	bls.s	.error
 	add.w	(a4,d0.w*2),d7
 	move.w	d7,(a1)+
-	dp_hash	d7
+	move.b	(a2,d7.l),d2
 	move.w	d7,(a3,d2.w*2)
-	bra.w	.slow
+	bra.s	.slow
 
 .slowindex:
 	cmp.l	a1,d5
 	bls.s	.error
 	move.w	(a5,d0.w*2),d7
 	move.w	d7,(a1)+
-	bra.w	.slow
+	bra.s	.slow
 
 .inputend:
 	cmp.l	a1,d5
@@ -370,7 +390,7 @@ _q_decPix:
 	moveq	#-1,d0
 .done:
 	lea		DP_PALSIZE(sp),sp
-	movem.l	(sp)+,d2-d7/a3-a6
+	movem.l	(sp)+,d2-d7/a2-a6
 	rts
 
 	; Value to add to previous pixel for each delta opcode ($80-$FF).

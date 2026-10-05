@@ -3,7 +3,8 @@
 
 /*=========================================================================
 *
-*   q16enc.h - C interface to q16enc.s, a Q16 image encoder for 68020/68030.
+*   q16enc.h - C interface to q16enc.s and q16enct.s, Q16 image encoders
+*   for 68020/68030.
 *
 *   Encodes complete RGB565 images with optional 8-bit alpha into Q16. The
 *   output is identical to that of q16_lib.c. Typical use:
@@ -15,16 +16,24 @@
 *       unsigned char * pPixelData = pFile + sizeof(q16_fileheader);
 *       unsigned char * pAlphaData, * pEnd;
 *
-*       q16_setupStaticTable( pStaticTable );      // From q16dec.s
-*
-*       pAlphaData = q_encPix( pPixelData, pPixels, pPixels + nbPixels, pStaticTable );
+*       pAlphaData = q_encPix( pPixelData, pPixels, pPixels + nbPixels );
 *       pEnd = pAlpha ? q_encAlp( pAlphaData, pAlpha, pAlpha + nbPixels ) : pAlphaData;
 *       q16_writeHeader( (q16_fileheader*) pFile, width, height,
 *                        pAlphaData - pPixelData, pEnd - pAlphaData, 0 );
 *
 *       // Save pEnd - pFile bytes from pFile.
 *
-*   q16_setupStaticTable() is part of q16dec.s, so link with both.
+*   Link with one of the two, not both:
+*
+*   q16enc.s    q_encPix() calculates the palette index of each pixel with
+*               the hash formula. This is the one to use normally.
+*
+*   q16enct.s   q_encPxT() looks the palette index up in a 64 KB table set
+*               up by q16_setupStaticTable(), which is in q16dect.s. Faster
+*               per pixel, so link with q16dect.s (not q16dec.s) and use
+*               q_encPxT( ..., pStaticTable ) when the table is wanted.
+*
+*   Both contain q16_writeHeader() and q_encAlp().
 *
 *=========================================================================*/
 
@@ -43,10 +52,17 @@ void Q16CALL			q16_writeHeader( q16_fileheader * header,
 										 unsigned long flags );
 
 /* Compresses the big endian RGB565 pixels between pBegin and pEnd into pDest.
-*  Returns the end of the compressed data.
+*  Returns the end of the compressed data. In q16enc.s.
 */
 
 unsigned char * Q16CALL	q_encPix( unsigned char * pDest,
+								  const unsigned short * pBegin, const unsigned short * pEnd );
+
+/* Same as q_encPix(), but looks up the palette index of each pixel in the
+*  static table. In q16enct.s.
+*/
+
+unsigned char * Q16CALL	q_encPxT( unsigned char * pDest,
 								  const unsigned short * pBegin, const unsigned short * pEnd,
 								  const unsigned char staticTable[65536] );
 

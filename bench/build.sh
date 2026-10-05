@@ -18,10 +18,18 @@ CFLAGS="-m68030 -msoft-float -O2 -fomit-frame-pointer -std=gnu99 -Wall"
 
 $VASM -quiet -devpac -Faout -o q16dec.o ../m68k/q16dec.s
 $VASM -quiet -devpac -Faout -o q16enc.o ../m68k/q16enc.s
-$VASM -quiet -devpac -Faout -o q16decf.o ../m68k/q16decf.s
+$VASM -quiet -devpac -Faout -o q16dect.o ../m68k/q16dect.s
+$VASM -quiet -devpac -Faout -o q16enct.o ../m68k/q16enct.s
+# The table versions contain the same q16_version, q16_readHeader, q_decAlp,
+# q16_writeHeader and q_encAlp as the default ones. Make their copies local
+# so all four can be linked together.
+for f in q16dect.o q16enct.o; do
+	m68k-atari-mint-objcopy -L q16_version -L _q16_version -L q16_readHeader -L _q16_readHeader \
+		-L q_decAlp -L _q_decAlp -L q16_writeHeader -L _q16_writeHeader -L q_encAlp -L _q_encAlp $f
+done
 $VASM -quiet -devpac -m68030 -Faout -o natfeats.o natfeats.s
 m68k-atari-mint-gcc $CFLAGS -I"$PREFIX/include" -c falcbench.c q16lib_c.c
-m68k-atari-mint-gcc -m68000 falcbench.o q16lib_c.o q16dec.o q16decf.o q16enc.o natfeats.o \
+m68k-atari-mint-gcc -m68000 falcbench.o q16lib_c.o q16dec.o q16enc.o q16dect.o q16enct.o natfeats.o \
 	-L"$PREFIX/lib" -lpng -lz -ljpeg -lm -o FALCBNCH.TOS
 m68k-atari-mint-strip FALCBNCH.TOS
-rm -f falcbench.o q16lib_c.o q16dec.o q16decf.o q16enc.o natfeats.o
+rm -f falcbench.o q16lib_c.o q16dec.o q16enc.o q16dect.o q16enct.o natfeats.o

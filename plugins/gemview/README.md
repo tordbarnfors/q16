@@ -5,7 +5,9 @@ modules. `Q16.GVL` is a load module that lets it open Q16 pictures, and
 `Q16.GVS` a save module that lets it save pictures as Q16.
 
 * Written in Devpac assembly and use `../../m68k/q16dec.s` and
-  `../../m68k/q16enc.s`, so they need a 68020 or better (Falcon, TT).
+  `../../m68k/q16enc.s`, so they need a 68020 or better (Falcon, TT). They
+  calculate palette indices instead of using a 64 KB table, which would take
+  longer to set up than it saves for one picture.
 * The load module delivers a True Color image, which GEM-View displays in any
   screen mode. Pictures with alpha are blended against white. It supports
   GEM-View's automatic format identification (the "Auto" flag).

@@ -9,9 +9,11 @@
 #define q16_writeHeader					c_q16_writeHeader
 #define q16_beginPixelCompression		c_q16_beginPixelCompression
 #define q16_compressPixels				c_q16_compressPixels
+#define q16_compressPixelsT				c_q16_compressPixelsT
 #define q16_compressAlpha				c_q16_compressAlpha
 #define q16_beginPixelDecompression		c_q16_beginPixelDecompression
 #define q16_decompressPixels			c_q16_decompressPixels
+#define q16_decompressPixelsT			c_q16_decompressPixelsT
 #define q16_beginAlphaDecompression		c_q16_beginAlphaDecompression
 #define q16_decompressAlpha				c_q16_decompressAlpha
 

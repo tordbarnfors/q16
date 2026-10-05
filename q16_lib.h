@@ -61,13 +61,26 @@ int			q16_version(void);
 uint32_t	q16_minPixelCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls);
 uint32_t	q16_minAlphaCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls);
 
-void 		q16_setupStaticTable( uint8_t staticData[65536] );
+// The pixel functions come in two versions. The ones without suffix calculate
+// the palette index of each pixel. The ones ending with T look it up in a
+// 65536 byte table, which q16_setupStaticTable() fills in and which can be
+// shared by all calls. They are a little faster per pixel, so they pay off
+// when the table is set up once and used for many images. Both give
+// identical results and can be mixed.
+//
+// Compile q16_lib.c with Q16_NO_STATIC_TABLE defined to leave out the table
+// functions. It makes programs that don't use them smaller with linkers that
+// can't drop unused functions.
+
+void 		q16_setupStaticTable( uint8_t staticData[65536] );		// Only for the ...T functions.
 
 int 		q16_readHeader( const q16_fileheader * header, uint16_t * width, uint16_t * height, uint32_t * pixelBytes, uint32_t * alphaBytes, uint8_t * flags, uint8_t * version );
 void 		q16_writeHeader( q16_fileheader * header, uint16_t width, uint16_t height, uint32_t pixelBytes, uint32_t alphaBytes, uint8_t flags );
 
 void 		q16_beginPixelCompression( uint16_t instanceTable[65] );
 uint8_t*	q16_compressPixels(	uint8_t* pDest, const uint16_t* pBegin, const uint16_t* pEnd,
+								uint16_t instanceTable[65] );
+uint8_t*	q16_compressPixelsT( uint8_t* pDest, const uint16_t* pBegin, const uint16_t* pEnd,
 								uint16_t instanceTable[65], const uint8_t staticTable[65536]);
 
 uint8_t*	q16_compressAlpha(	uint8_t* pDest, const uint8_t* pBegin, const uint8_t* pEnd );
@@ -75,6 +88,8 @@ uint8_t*	q16_compressAlpha(	uint8_t* pDest, const uint8_t* pBegin, const uint8_t
 
 void 		q16_beginPixelDecompression(uint16_t instanceTable[65]);
 q16_result	q16_decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
+									uint16_t instanceTable[65] );
+q16_result	q16_decompressPixelsT( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
 									uint16_t instanceTable[65], const uint8_t staticTable[65536] );
 
 void 		q16_beginAlphaDecompression(uint8_t instanceTable[1]);

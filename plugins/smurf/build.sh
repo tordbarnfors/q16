@@ -23,7 +23,7 @@ else
 fi
 VASM=${2:-vasmm68k_mot}
 
-CFLAGS="-m68000 -O2 -fomit-frame-pointer -std=gnu99 -Wall -I$SMINC -I../.."
+CFLAGS="-m68000 -O2 -fomit-frame-pointer -std=gnu99 -Wall -I$SMINC -I../.. -DQ16_NO_STATIC_TABLE"
 
 # For Smurf built with gcc.
 $VASM -quiet -devpac -Faout -o impstart.o impstart.s > /dev/null

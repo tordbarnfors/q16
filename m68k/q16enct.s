@@ -1,6 +1,7 @@
 ;=========================================================================
 ;
-;	q16enc.s - Q16 image encoder for 68020/68030 (Atari Falcon, TT etc.)
+;	q16enct.s - Q16 image encoder for 68020/68030 (Atari Falcon, TT etc.)
+;	            using a 64 KB static table.
 ;
 ;	Encodes complete images into Q16 (RGB565 pixels with optional 8-bit
 ;	alpha). The output is byte-identical to q16_lib.c when the image is
@@ -10,14 +11,16 @@
 ;	Devpac syntax. Uses 68020+ addressing modes and unaligned word writes,
 ;	so a 68000 is not supported.
 ;
-;	Calling convention as in q16dec.s: arguments on the stack (cdecl),
+;	Calling convention as in q16dect.s: arguments on the stack (cdecl),
 ;	d0-d1/a0-a1 destroyed, all other registers preserved. Pointers are
 ;	returned in both d0 and a0, since compilers differ in which register
 ;	they expect. Reentrant, no BSS or DATA.
 ;
-;	The palette index of each pixel is calculated with the hash formula.
-;	q16enct.s is an alternative that looks it up in a 64 KB table instead.
-;	Use either this file or q16enct.s, not both.
+;	This is the table version of q16enc.s. q_encPxT() looks up the palette
+;	index of each pixel in the 64 KB table that q16_setupStaticTable() in
+;	q16dect.s fills in, instead of calculating it like q_encPix() in
+;	q16enc.s. Link with q16dect.s. Use either this file or q16enc.s, not
+;	both: both contain q16_writeHeader() and q_encAlp().
 ;
 ;	The file can be assembled on its own or INCLUDEd into a program.
 ;
@@ -28,7 +31,7 @@
 	section	text
 
 	xdef	q16_writeHeader,_q16_writeHeader
-	xdef	q_encPix,_q_encPix
+	xdef	q_encPxT,_q_encPxT
 	xdef	q_encAlp,_q_encAlp
 
 
@@ -72,11 +75,12 @@ _q16_writeHeader:
 	rts
 
 
-;____ q_encPix() _________________________________________________________
+;____ q_encPxT() _________________________________________________________
 ;
-;	unsigned char * q_encPix( unsigned char * pDest,
+;	unsigned char * q_encPxT( unsigned char * pDest,
 ;	                          const unsigned short * pBegin,
-;	                          const unsigned short * pEnd );
+;	                          const unsigned short * pEnd,
+;	                          const unsigned char staticTable[65536] );
 ;
 ;	Compresses the big endian RGB565 pixels between pBegin and pEnd into
 ;	pDest, which must have room for Q16_MAX_PIXEL_BYTES(pixels) bytes.
@@ -92,13 +96,13 @@ _q16_writeHeader:
 ;	d7 = previous pixel
 ;	a0 = read pointer
 ;	a1 = write pointer
-;	a2 = not used
+;	a2 = static table (pixel to palette index)
 ;	a3 = palette (64 words on the stack)
 ;	a4 = end of input
 ;	a5 = count byte of current literal run
 
 EP_PALSIZE			equ		128
-EP_ARGS				equ		4+10*4+EP_PALSIZE	; Return address, saved registers, palette.
+EP_ARGS				equ		4+11*4+EP_PALSIZE	; Return address, saved registers, palette.
 
 ;	DELTA pixel,previous,result,temp1,temp2,toolarge
 ;
@@ -140,32 +144,15 @@ delta				macro
 	or.b	#$80,\3
 	endm
 
-;	EP_HASH pixel,temp
-;
-;	Sets d0 to the palette index of pixel, calculated with the hash
-;	formula (p + (p >> 3) + (p >> 4) + (p >> 10)) & 63. Bits 8-31 of d0
-;	stay 0.
-
-ep_hash				macro
-	move.w	\1,d0
-	move.w	\1,\2
-	lsr.w	#3,\2
-	add.w	\2,d0								; p + (p >> 3)
-	lsr.w	#1,\2
-	add.w	\2,d0								;   + (p >> 4)
-	lsr.w	#6,\2
-	add.w	\2,d0								;   + (p >> 10)
-	and.w	#63,d0
-	endm
-
-q_encPix:
-_q_encPix:
-	movem.l	d2-d7/a3-a6,-(sp)
+q_encPxT:
+_q_encPxT:
+	movem.l	d2-d7/a2-a6,-(sp)
 	lea		-EP_PALSIZE(sp),sp
 
 	move.l	EP_ARGS(sp),a1						; pDest
 	move.l	EP_ARGS+4(sp),a0					; pBegin
 	move.l	EP_ARGS+8(sp),a4					; pEnd
+	move.l	EP_ARGS+12(sp),a2					; staticTable
 
 	move.l	sp,a3								; Clear the palette.
 	moveq	#EP_PALSIZE/4-1,d0
@@ -206,7 +193,7 @@ _q_encPix:
 	; 01xxxxxx - Pixel from palette.
 
 .notrepeat:
-	ep_hash	d1,d2
+	move.b	(a2,d1.l),d0
 	cmp.w	(a3,d0.w*2),d1
 	bne.s	.notindex
 	move.b	d0,d2
@@ -237,14 +224,14 @@ _q_encPix:
 	moveq	#0,d6								; d6 = count - 1
 .literalnext:
 	cmp.w	#31,d6
-	bhs.w	.literalend
+	bhs.s	.literalend
 	cmpa.l	a4,a0
-	bhs.w	.literalend
+	bhs.s	.literalend
 	moveq	#0,d3
 	move.w	(a0),d3								; d3 = next pixel
 	cmp.w	d1,d3
 	beq.s	.literalend							; Start of repeat.
-	ep_hash	d3,d4
+	move.b	(a2,d3.l),d0
 	cmp.w	(a3,d0.w*2),d3
 	beq.s	.literalend							; Can be taken from palette.
 	delta	d3,d1,d2,d4,d7,.literalpixel
@@ -256,7 +243,7 @@ _q_encPix:
 	move.w	d3,(a1)+
 	addq.l	#2,a0
 	addq.w	#1,d6
-	bra.w	.literalnext
+	bra.s	.literalnext
 .literalend:
 	move.b	d6,(a5)
 	move.w	d1,d7
@@ -266,7 +253,7 @@ _q_encPix:
 	move.l	a1,d0
 	move.l	a1,a0
 	lea		EP_PALSIZE(sp),sp
-	movem.l	(sp)+,d2-d7/a3-a6
+	movem.l	(sp)+,d2-d7/a2-a6
 	rts
 
 

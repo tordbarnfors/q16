@@ -72,11 +72,7 @@ int main( int argc, char * argv[] )
 		return -1;
 	}
 
-	uint8_t * staticTable = malloc(65536);
-
 	uint16_t instanceTable[65];
-
-	q16_setupStaticTable( staticTable );
 
 
 	for( int file = 1 ; file < argc ; file++ )
@@ -181,8 +177,8 @@ int main( int argc, char * argv[] )
 		uint8_t * pEndCompressedPixels = pBeginCompressedPixels + pixelBytes;
 
 		q16_beginPixelDecompression( instanceTable );
-		q16_result decompRes = q16_decompressPixels( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels, 
-						 instanceTable, staticTable );
+		q16_result decompRes = q16_decompressPixels( pRawPixels, pBeginCompressedPixels, pEndCompressedPixels,
+						 instanceTable );
 
 		if( decompRes.readEnd != pEndCompressedPixels || decompRes.writeEnd != pRawPixels + nbPixels )
 		{
@@ -265,8 +261,6 @@ cleanup:
 		free( pRawAlpha );
 		free( pConvertedSrc );
 	}
-
-	free( staticTable );
 
 	return 0;
 }

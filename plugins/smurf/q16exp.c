@@ -50,7 +50,7 @@ EXPORT_PIC * exp_module_main( GARGAMEL * smurf_struct )
 {
 	EXPORT_PIC * exp_pic;
 	uint16_t * pixels;
-	uint8_t * out, * table, * end;
+	uint8_t * out, * end;
 	uint16_t instance[65];
 	unsigned long nbPixels;
 	short width, height;
@@ -79,21 +79,17 @@ EXPORT_PIC * exp_module_main( GARGAMEL * smurf_struct )
 
 		exp_pic = (EXPORT_PIC *) Malloc( sizeof(EXPORT_PIC) );
 		out = (uint8_t *) Malloc( sizeof(q16_fileheader) + q16_minPixelCompressionBuffer( nbPixels, 1 ) );
-		table = (uint8_t *) Malloc( 65536 );
-		if( !exp_pic || !out || !table )
+		if( !exp_pic || !out )
 		{
 			if( exp_pic ) Mfree( exp_pic );
 			if( out ) Mfree( out );
-			if( table ) Mfree( table );
 			smurf_struct->module_mode = M_MEMORY;
 			return NULL;
 		}
 
-		q16_setupStaticTable( table );
 		q16_beginPixelCompression( instance );
-		end = q16_compressPixels( out + sizeof(q16_fileheader), pixels, pixels + nbPixels, instance, table );
+		end = q16_compressPixels( out + sizeof(q16_fileheader), pixels, pixels + nbPixels, instance );
 		q16_writeHeader( (q16_fileheader *) out, width, height, end - (out + sizeof(q16_fileheader)), 0, 0 );
-		Mfree( table );
 
 		exp_pic->pic_data = out;
 		exp_pic->f_len = end - out;

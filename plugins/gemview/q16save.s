@@ -4,8 +4,8 @@
 ;
 ;	Saves pictures as Q16 (RGB565, no alpha, since GEM-View pictures have
 ;	none): True Color, palette pictures (chunky or bitplanes, the palette
-;	is applied) and monochrome pictures. Uses
-;	../../m68k/q16enc.s and q16dec.s, so it needs a 68020 or better.
+;	is applied) and monochrome pictures. Uses ../../m68k/q16enc.s, so it
+;	needs a 68020 or better.
 ;
 ;	GEM-View calls the module with the Pure C calling convention: the
 ;	SAVE_Structure in a0 and verbose in d0, the result is returned in d0.
@@ -85,7 +85,6 @@ q16_save:
 	movem.l	d3-d7/a2-a6,-(sp)
 	move.l	a0,a5								; a5 = SAVE_Structure
 	clr.l	pixels
-	clr.l	table
 	clr.l	out
 
 	move.l	SS_IMAGE(a5),a4						; a4 = Image
@@ -115,10 +114,6 @@ q16_save:
 	add.l	d0,d0
 	bsr		qs_malloc
 	move.l	a0,pixels
-	beq		.nomem
-	move.l	#65536,d0
-	bsr		qs_malloc
-	move.l	a0,table
 	beq		.nomem
 	move.l	d5,d0								; Header + Q16_MAX_PIXEL_BYTES
 	add.l	d0,d0
@@ -234,11 +229,6 @@ q16_save:
 
 	; Compress.
 
-	move.l	table,-(sp)
-	bsr		q16_setupStaticTable
-	addq.l	#4,sp
-
-	move.l	table,-(sp)
 	move.l	pixels,a0
 	move.l	d5,d0
 	add.l	d0,d0
@@ -248,7 +238,7 @@ q16_save:
 	move.l	out,a0
 	pea		20(a0)
 	bsr		q_encPix
-	lea		16(sp),sp
+	lea		12(sp),sp
 	sub.l	out,d0
 	move.l	d0,d3								; d3 = file length
 
@@ -333,7 +323,7 @@ qs_print:
 
 qs_cleanup:
 	lea		pixels,a3
-	moveq	#2,d3								; pixels, table, out
+	moveq	#1,d3								; pixels, out
 .loop:
 	move.l	(a3),d0
 	beq.s	.next
@@ -409,16 +399,14 @@ alert_memory:		dc.b	"[3][ | Not enough memory to save | the Q16 picture. ][  OK 
 alert_type:			dc.b	"[3][ | The Q16 module can't save | this kind of picture. ][  OK  ]",0
 	even
 
-	include	"../../m68k/q16dec.s"
 	include	"../../m68k/q16enc.s"
 
 ;____ Variables __________________________________________________________
 
 	section	bss
 
-pixels:				ds.l	1					; pixels, table and out must stay
-table:				ds.l	1					; in this order, see qs_cleanup.
-out:				ds.l	1
+pixels:				ds.l	1					; pixels and out must stay in
+out:				ds.l	1					; this order, see qs_cleanup.
 planesize:			ds.l	1					; Bytes per plane
 lastplane:			ds.l	1					; Offset of the last plane
 depth:				ds.w	1					; Planes - 1

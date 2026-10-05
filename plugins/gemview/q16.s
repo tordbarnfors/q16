@@ -71,7 +71,6 @@ q16_load:
 	clr.l	file
 	clr.l	pixels
 	clr.l	alpha
-	clr.l	table
 	clr.l	title
 
 	move.l	LS_FILENAME(a5),a0					; Open file.
@@ -133,11 +132,7 @@ q16_load:
 	cmp.l	d3,d0
 	bne		.fail
 
-	move.l	#65536,d0							; Allocate buffers.
-	bsr		ql_malloc
-	move.l	a0,table
-	beq		.fail
-	move.l	d6,d0
+	move.l	d6,d0								; Allocate buffers.
 	add.l	d0,d0
 	bsr		ql_malloc
 	move.l	a0,pixels
@@ -150,12 +145,7 @@ q16_load:
 	beq		.fail
 
 .decode:
-	move.l	table,-(sp)
-	bsr		q16_setupStaticTable
-	addq.l	#4,sp
-
-	move.l	table,-(sp)							; Pixels
-	move.l	d6,-(sp)
+	move.l	d6,-(sp)							; Pixels
 	move.l	file,a0
 	move.l	a0,d0
 	add.l	pixelbytes,d0
@@ -163,7 +153,7 @@ q16_load:
 	move.l	a0,-(sp)
 	move.l	pixels,-(sp)
 	bsr		q_decPix
-	lea		20(sp),sp
+	lea		16(sp),sp
 	tst.l	d0
 	bne		.fail
 
@@ -281,7 +271,7 @@ q16_load:
 
 ql_cleanup:
 	lea		file,a3
-	moveq	#4,d3								; file, pixels, alpha, table, title
+	moveq	#3,d3								; file, pixels, alpha, title
 .loop:
 	move.l	(a3),d0
 	beq.s	.next
@@ -319,10 +309,9 @@ ql_malloc:
 	section	bss
 
 zfile:				ds.l	1
-file:				ds.l	1					; file, pixels, alpha, table and title
+file:				ds.l	1					; file, pixels, alpha and title
 pixels:				ds.l	1					; must stay in this order, see ql_cleanup.
 alpha:				ds.l	1
-table:				ds.l	1
 title:				ds.l	1
 pixelbytes:			ds.l	1
 alphabytes:			ds.l	1

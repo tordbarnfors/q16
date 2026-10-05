@@ -9,7 +9,9 @@ computers with import and export modules. `Q16.SIM` is an import module and
   are blended against white.
 * Export saves 16-bit pictures as Q16 (without alpha). Smurf converts
   pictures of other depths to 16 bit before calling the module.
-* Use q16_lib.c and are built for the 68000.
+* Use q16_lib.c and are built for the 68000. The table-less pixel functions
+  are used and q16_lib.c is compiled with `Q16_NO_STATIC_TABLE`, which leaves
+  the table versions out.
 
 There are two builds, since Smurf checks that a module was built with the
 same compiler as itself (`MOD_INFO.compiler_id`): Pure C and gcc use

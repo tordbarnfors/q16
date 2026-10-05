@@ -8,6 +8,7 @@
 *   for each NAME and times encoding and decoding with:
 *
 *   Q16   q16_lib.c                    RGB565 (+ alpha)
+*   Q16   q16_lib.c, ...T functions    RGB565 (+ alpha), with the static table
 *   QOI   qoi_encode/qoi_decode below  RGB565 pixels expanded to 8 bits
 *   PNG   libpng (zlib level 6)        RGB565 pixels expanded to 8 bits
 *   PNG   stb_image_write / stb_image  RGB565 pixels expanded to 8 bits
@@ -50,6 +51,7 @@ static uint8_t *		g_buf;					/* Encoded data */
 static size_t			g_bufSize, g_len;
 static uint8_t *		g_out;					/* Decoded data */
 static uint8_t			g_staticTable[65536];
+static int				g_useTable;				/* Use the Q16 ...T functions */
 
 static double now( void )
 {
@@ -85,7 +87,10 @@ static void q16_enc( void )
 	uint8_t * pixEnd, * alphaEnd;
 
 	q16_beginPixelCompression( inst );
-	pixEnd = q16_compressPixels( p, g_q16pix, g_q16pix + n, inst, g_staticTable );
+	if( g_useTable )
+		pixEnd = q16_compressPixelsT( p, g_q16pix, g_q16pix + n, inst, g_staticTable );
+	else
+		pixEnd = q16_compressPixels( p, g_q16pix, g_q16pix + n, inst );
 	alphaEnd = g_q16alpha ? q16_compressAlpha( pixEnd, g_q16alpha, g_q16alpha + n ) : pixEnd;
 	q16_writeHeader( (q16_fileheader*) g_buf, g_w, g_h, pixEnd - p, alphaEnd - pixEnd, 0 );
 	g_len = alphaEnd - g_buf;
@@ -102,7 +107,10 @@ static void q16_dec( void )
 
 	q16_readHeader( (q16_fileheader*) g_buf, &w, &h, &pb, &ab, &flags, &version );
 	q16_beginPixelDecompression( inst );
-	q16_decompressPixels( (uint16_t*) g_out, p, p + pb, inst, g_staticTable );
+	if( g_useTable )
+		q16_decompressPixelsT( (uint16_t*) g_out, p, p + pb, inst, g_staticTable );
+	else
+		q16_decompressPixels( (uint16_t*) g_out, p, p + pb, inst );
 	if( ab )
 	{
 		q16_beginAlphaDecompression( ainst );
@@ -408,10 +416,13 @@ int main( int argc, char * argv[] )
 				d[3] = g_q16alpha[k] = s[3];
 		}
 
-		run( argv[i], "Q16", "q16_lib", q16_enc, q16_dec, NULL, NULL );
-		q16_dec();
-		if( memcmp( g_out, g_q16pix, n * 2 ) || (g_q16alpha && memcmp( g_out + n * 2, g_q16alpha, n )) )
-			fprintf( stderr, "%s: Q16 round trip FAILED\n", argv[i] );
+		for( g_useTable = 0 ; g_useTable < 2 ; g_useTable++ )
+		{
+			run( argv[i], "Q16", g_useTable ? "q16_lib T" : "q16_lib", q16_enc, q16_dec, NULL, NULL );
+			q16_dec();
+			if( memcmp( g_out, g_q16pix, n * 2 ) || (g_q16alpha && memcmp( g_out + n * 2, g_q16alpha, n )) )
+				fprintf( stderr, "%s: Q16 round trip FAILED\n", argv[i] );
+		}
 		run( argv[i], "QOI", "qoi", qoi_enc, qoi_dec, NULL, NULL );
 		qoi_dec();
 		if( memcmp( g_out, g_q8, n * g_ch ) )

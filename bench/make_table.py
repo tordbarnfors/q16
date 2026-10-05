@@ -44,10 +44,10 @@ for n in names:
                                              kb(size(n + "_90.JPG")), kb(size(n + "_75.JPG"))))
 
 print("\n### Decoding time\n")
-print("| Image | Q16 asm | Q16 C | PNG libpng | PNG stb | JPEG q90 turbo | JPEG q90 turbo565 | JPEG q90 stb | JPEG q75 turbo | JPEG q75 turbo565 | JPEG q75 stb |")
-print("|---|---|---|---|---|---|---|---|---|---|---|")
+print("| Image | Q16 asm | Q16 asmT | Q16 C | Q16 CT | PNG libpng | PNG stb | JPEG q90 turbo | JPEG q90 turbo565 | JPEG q90 stb | JPEG q75 turbo | JPEG q75 turbo565 | JPEG q75 stb |")
+print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 for n in names:
-    print("| %s | %s |" % (n, " | ".join([ms(n + ".Q16", "asm"), ms(n + ".Q16", "C"),
+    print("| %s | %s |" % (n, " | ".join([ms(n + ".Q16", "asm"), ms(n + ".Q16", "asmT"), ms(n + ".Q16", "C"), ms(n + ".Q16", "CT"),
                                           ms(n + ".PNG", "libpng"), ms(n + ".PNG", "stb"),
                                           ms(n + "_90.JPG", "turbo"), ms(n + "_90.JPG", "turbo565"), ms(n + "_90.JPG", "stb"),
                                           ms(n + "_75.JPG", "turbo"), ms(n + "_75.JPG", "turbo565"), ms(n + "_75.JPG", "stb")])))
@@ -55,7 +55,7 @@ for n in names:
 if any(dec.startswith("enc ") for _, dec in times):
     print("\n### Encoding time\n")
     print("Encoding the pixels decoded from NAME.PNG (RGB565). JPEG encodes them as 8-bit RGB.\n")
-    print("| Image | Q16 asm | Q16 C | PNG libpng | JPEG q90 turbo | JPEG q75 turbo |")
-    print("|---|---|---|---|---|---|")
+    print("| Image | Q16 asm | Q16 asmT | Q16 C | Q16 CT | PNG libpng | JPEG q90 turbo | JPEG q75 turbo |")
+    print("|---|---|---|---|---|---|---|---|")
     for n in names:
-        print("| %s | %s |" % (n, " | ".join(ms(n + ".PNG", "enc " + e) for e in ["asm", "C", "png", "jpg90", "jpg75"])))
+        print("| %s | %s |" % (n, " | ".join(ms(n + ".PNG", "enc " + e) for e in ["asm", "asmT", "C", "CT", "png", "jpg90", "jpg75"])))

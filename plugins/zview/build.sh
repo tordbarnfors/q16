@@ -25,7 +25,7 @@ fi
 
 VASM=${2:-vasmm68k_mot}
 
-CFLAGS="-m68000 -O2 -std=gnu99 -Wall -I$ZVINC -I../.."
+CFLAGS="-m68000 -O2 -std=gnu99 -Wall -I$ZVINC -I../.. -DQ16_NO_STATIC_TABLE"
 
 # The codec is linked without a C library: ldgstart.s and ldgmini.c
 # provide the startup code, ldg_init() and the few functions needed.

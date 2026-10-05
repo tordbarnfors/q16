@@ -3607,8 +3607,8 @@ put_320x200:
 ;____ Q16 support, added in v1.2 ____________________________________________
 ;
 ;	Q16 is RGB565 with optional 8-bit alpha, see q16_lib.h. The picture is
-;	decoded with q_decPixF (q16decf.s, no 64 KB table) and q_decAlp
-;	(q16dec.s) into temporary buffers and copied to the screen.
+;	decoded with q_decPix and q_decAlp (q16dec.s) into temporary buffers
+;	and copied to the screen.
 ;	Alpha is blended against black.
 
 ;	Header parser. a0 = format table entry.
@@ -3688,7 +3688,7 @@ q16_load:
 	beq.w	.fail
 .no_alpha:
 
-	move.l	(q16_pixels_count).l,-(a7)			; Decode pixels. q_decPixF needs
+	move.l	(q16_pixels_count).l,-(a7)			; Decode pixels. q_decPix needs
 	movea.l	file_buffer(pc),a3
 	lea		20(a3),a3
 	move.l	a3,d0
@@ -3696,7 +3696,7 @@ q16_load:
 	move.l	d0,-(a7)
 	move.l	a3,-(a7)							; no table, which would take
 	move.l	(q16_pixels).l,-(a7)				; longer to set up than it saves
-	bsr.w	q_decPixF							; for one picture.
+	bsr.w	q_decPix							; for one picture.
 	lea		16(a7),a7
 	tst.w	d0
 	bne.w	.fail
@@ -3815,8 +3815,7 @@ q16_blend:
 	movem.l	(a7)+,d2-d7
 	rts
 
-	include	"../m68k/q16decf.s"					; q_decPixF
-	include	"../m68k/q16dec.s"					; q_decAlp
+	include	"../m68k/q16dec.s"					; q_decPix, q_decAlp
 
 	section	data
 skip_shiftmode:									; Restore the ST shift mode on exit if 0

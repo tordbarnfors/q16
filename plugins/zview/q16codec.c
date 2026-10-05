@@ -76,7 +76,6 @@ boolean __CDECL reader_init( const char * name, IMGINFO info )
 {
 	long handle, size;
 	uint8_t * file = NULL;
-	uint8_t * table = NULL;
 	q16_codec * c = NULL;
 	uint16_t width, height, instance[65];
 	uint8_t alphaInstance[1], flags, version;
@@ -107,18 +106,16 @@ boolean __CDECL reader_init( const char * name, IMGINFO info )
 	nbPixels = (unsigned long) width * height;
 
 	c = xmalloc( sizeof(q16_codec) );
-	table = xmalloc( 65536 );
-	if( !c || !table )
+	if( !c )
 		goto fail;
 	memset( c, 0, sizeof(q16_codec) );
 	c->pixels = xmalloc( nbPixels * 2 );
 	if( !c->pixels || (alphaBytes && (c->alpha = xmalloc( nbPixels )) == NULL) )
 		goto fail;
 
-	q16_setupStaticTable( table );
 	q16_beginPixelDecompression( instance );
 	res = q16_decompressPixels( c->pixels, file + sizeof(q16_fileheader),
-								file + sizeof(q16_fileheader) + pixelBytes, instance, table );
+								file + sizeof(q16_fileheader) + pixelBytes, instance );
 	if( res.readEnd != file + sizeof(q16_fileheader) + pixelBytes || res.writeEnd != c->pixels + nbPixels )
 		goto fail;
 
@@ -131,7 +128,6 @@ boolean __CDECL reader_init( const char * name, IMGINFO info )
 			goto fail;
 	}
 
-	xfree( table );
 	xfree( file );
 
 	info->width = width;
@@ -156,7 +152,6 @@ boolean __CDECL reader_init( const char * name, IMGINFO info )
 
 fail:
 	free_codec( c );
-	xfree( table );
 	xfree( file );
 	return FALSE;
 }
@@ -288,26 +283,19 @@ boolean __CDECL encoder_write( IMGINFO info, uint8_t * buffer )
 		unsigned long nbPixels = (unsigned long) info->width * info->height;
 		long size = sizeof(q16_fileheader) + q16_minPixelCompressionBuffer( nbPixels, 1 );
 		uint8_t * out = xmalloc( size );
-		uint8_t * table = xmalloc( 65536 );
 		uint16_t instance[65];
 		uint8_t * end;
 		long len;
 
-		if( !out || !table )
-		{
-			xfree( out );
-			xfree( table );
+		if( !out )
 			return FALSE;
-		}
 
-		q16_setupStaticTable( table );
 		q16_beginPixelCompression( instance );
-		end = q16_compressPixels( out + sizeof(q16_fileheader), c->pixels, c->pixels + nbPixels, instance, table );
+		end = q16_compressPixels( out + sizeof(q16_fileheader), c->pixels, c->pixels + nbPixels, instance );
 		q16_writeHeader( (q16_fileheader *) out, info->width, info->height,
 						 end - (out + sizeof(q16_fileheader)), 0, 0 );
 		len = end - out;
 		x = Fwrite( c->handle, len, out ) == len;
-		xfree( table );
 		xfree( out );
 		return x ? TRUE : FALSE;
 	}

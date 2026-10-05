@@ -133,19 +133,44 @@ uint32_t q16_minAlphaCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls)
 }
 
 
+//____ pixelToIndex() ________________________________________________________
+//
+// Palette index of a pixel. The static table holds this for every pixel.
+
+static inline uint8_t pixelToIndex( uint16_t p )
+{
+	return (uint8_t)((p + (p >> 3) + (p >> 4) + (p >> 10)) & 63);
+}
+
+// The pixel compression and decompression functions are written once and
+// inlined into the functions without the table (useTable is 0, the palette
+// index is calculated) and the ...T functions (useTable is 1, the palette
+// index is looked up in pixelToIndexTable). useTable is a constant in each,
+// so the compiler removes the test.
+
+#if defined(__GNUC__)
+#	define Q16_ALWAYS_INLINE	static inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#	define Q16_ALWAYS_INLINE	static __forceinline
+#else
+#	define Q16_ALWAYS_INLINE	static inline
+#endif
+
+#define PIXEL_INDEX(p)		(useTable ? pixelToIndexTable[p] : pixelToIndex(p))
+
+
 //____ q16_setupStaticTable() ___________________________________________________________
 
+#ifndef Q16_NO_STATIC_TABLE
 void q16_setupStaticTable( uint8_t pixelToIndexTable[65536] )
 {
 	// Generate pixelToIndexTable. Decides which of the 64 palette entries
 	// each pixel should go into.
 
 	for (uint32_t i = 0; i < 65536; i++)
-	{
-		uint16_t p = i;
-		pixelToIndexTable[i] = (uint8_t)((p + (p >> 3) + (p >> 4) + (p >> 10)) & 63);
-	}
+		pixelToIndexTable[i] = pixelToIndex((uint16_t)i);
 }
+#endif
 
 
 //____ q16_readHeader() ______________________________________________________
@@ -205,12 +230,11 @@ void q16_beginPixelDecompression(uint16_t instanceData[65])
 }
 
 
-//____ q16_decompressPixels() ________________________________________________
+//____ q16_decompressPixels() / q16_decompressPixelsT() ________________________
 
-q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, 
-								uint16_t instanceData[65], const uint8_t staticData[65536] )
+Q16_ALWAYS_INLINE q16_result decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
+											  uint16_t instanceData[65], const uint8_t * pixelToIndexTable, const int useTable )
 {
-	const uint8_t * pixelToIndexTable = staticData;
 	uint16_t*	palette = instanceData + 1;
 	uint16_t	  lastPixel = instanceData[0];
 	const uint8_t * pRead = pBegin;
@@ -236,7 +260,7 @@ q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const
 					lastPixel |= ((uint16_t)(*pRead++)) << 8;
 					*pDest++ = lastPixel;
 
-					palette[pixelToIndexTable[lastPixel]] = lastPixel;
+					palette[PIXEL_INDEX(lastPixel)] = lastPixel;
 				}
 			}
 			else
@@ -261,7 +285,7 @@ q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const
 				lastPixel -= deltaTable[index][1];
 
 				*pDest++ = lastPixel;
-				palette[pixelToIndexTable[lastPixel]] = lastPixel;
+				palette[PIXEL_INDEX(lastPixel)] = lastPixel;
 			}
 		}
 	}
@@ -274,6 +298,19 @@ q16_result q16_decompressPixels(	uint16_t * pDest, const uint8_t * pBegin, const
 	return res;
 }
 
+q16_result q16_decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, uint16_t instanceData[65] )
+{
+	return decompressPixels( pDest, pBegin, pEnd, instanceData, NULL, 0 );
+}
+
+#ifndef Q16_NO_STATIC_TABLE
+q16_result q16_decompressPixelsT( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
+								  uint16_t instanceData[65], const uint8_t staticData[65536] )
+{
+	return decompressPixels( pDest, pBegin, pEnd, instanceData, staticData, 1 );
+}
+#endif
+
 //____ q16_beginPixelCompression() ________________________________________________________
 
 void q16_beginPixelCompression(uint16_t instanceData[65])
@@ -282,13 +319,11 @@ void q16_beginPixelCompression(uint16_t instanceData[65])
 		instanceData[i] = 0;
 }
 
-//____ q16_compressPixels() __________________________________________________
+//____ q16_compressPixels() / q16_compressPixelsT() __________________________
 
-uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd, 
-						 uint16_t instanceData[65], const uint8_t staticData[65536] )
+Q16_ALWAYS_INLINE uint8_t * compressPixels( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd,
+											uint16_t instanceData[65], const uint8_t * pixelToIndexTable, const int useTable )
 {
-	const uint8_t* pixelToIndexTable = staticData;
-
 	uint16_t* palette = instanceData + 1;
 	uint16_t lastPixel = instanceData[0];
 
@@ -311,7 +346,7 @@ uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const ui
 		}
 		else
 		{
-			uint8_t index = pixelToIndexTable[pixel];
+			uint8_t index = PIXEL_INDEX(pixel);
 
 			if (palette[index] == pixel)
 				*pWrite++ = 0x40 | index;						// Store as index lookup
@@ -353,7 +388,7 @@ uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const ui
 						if (nextPixel == pixel)
 							break;				// Next pixel is start of repetive section
 
-						uint8_t nextIndex = pixelToIndexTable[nextPixel];
+						uint8_t nextIndex = PIXEL_INDEX(nextPixel);
 						if (palette[nextIndex] == nextPixel)
 							break;				// Next pixel can be taken from index;
 
@@ -395,6 +430,19 @@ uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const ui
 	instanceData[0] = lastPixel;
 	return pWrite;
 }
+
+uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd, uint16_t instanceData[65] )
+{
+	return compressPixels( pDest, pBegin, pEnd, instanceData, NULL, 0 );
+}
+
+#ifndef Q16_NO_STATIC_TABLE
+uint8_t * q16_compressPixelsT( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd,
+							   uint16_t instanceData[65], const uint8_t staticData[65536] )
+{
+	return compressPixels( pDest, pBegin, pEnd, instanceData, staticData, 1 );
+}
+#endif
 
 //____ q16_compressAlpha() ____________________________________________________
 //

@@ -16,11 +16,11 @@ Version 1.2 adds support for Q16 pictures (`.Q16`):
 
 * The format table has a new entry with a header parser (`q16_header`) and a
   loader (`q16_load`), following the same pattern as the Targa support.
-* The picture is decoded by `q_decPixF()` from `m68k/q16decf.s` and
-  `q_decAlp()` from `m68k/q16dec.s`, which are included into the source, into
-  temporary buffers and copied to the screen. `q_decPixF()` needs no 64 KB
-  table: for one picture, setting up the table would take longer than it
-  saves (see [../bench](../bench/README.md#static-table-or-hash-formula)).
+* The picture is decoded by `q_decPix()` and `q_decAlp()` from
+  `m68k/q16dec.s`, which is included into the source, into temporary buffers
+  and copied to the screen. `q_decPix()` needs no 64 KB table: for one
+  picture, setting up the table would take longer than it saves (see
+  [../bench](../bench/README.md#static-table-or-hash-formula)).
 * Pictures with alpha are blended against black.
 
 It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):

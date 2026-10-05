@@ -3,6 +3,7 @@
 #include "stb_image.h"
 
 #include "q16_lib.h"
+#include <string.h>
 
 /*=========================================================================
 *
@@ -82,7 +83,7 @@ int main( int argc, char * argv[] )
 
 			q16_beginPixelCompression(instanceTable);
 
-			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
+			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable );
 			strcpy((char*)pCompressedEnd, "NANANANA");
 
 			uint16_t* pRawOutput = malloc(nbPixels * 2 + 9);
@@ -91,7 +92,7 @@ int main( int argc, char * argv[] )
 
 			q16_beginPixelDecompression(instanceTable);
 
-			q16_result res = q16_decompressPixels(pRawOutput, pCompressed, pCompressedEnd, instanceTable, staticTable );
+			q16_result res = q16_decompressPixels(pRawOutput, pCompressed, pCompressedEnd, instanceTable );
 
 			int nbWritten = (int) (((uint16_t*)res.writeEnd) - pRawOutput);
 			int nbCompared = nbWritten < nbPixels ? nbWritten : nbPixels;
@@ -112,6 +113,33 @@ int main( int argc, char * argv[] )
 				printf("ERROR: Pixel decompression stopped before end of stream.\n");
 			else
 				pixelsOk = 1;
+
+			// The ...T versions with the static table must give the same results.
+
+			if (pixelsOk)
+			{
+				uint8_t * pCompressedT = malloc(q16_minPixelCompressionBuffer(nbPixels, 1));
+				uint16_t * pRawOutputT = malloc(nbPixels * 2);
+
+				q16_beginPixelCompression(instanceTable);
+				uint8_t * pCompressedEndT = q16_compressPixelsT( pCompressedT, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
+
+				q16_beginPixelDecompression(instanceTable);
+				q16_result resT = q16_decompressPixelsT( pRawOutputT, pCompressed, pCompressedEnd, instanceTable, staticTable );
+
+				if (pCompressedEndT - pCompressedT != pCompressedEnd - pCompressed || memcmp(pCompressedT, pCompressed, pCompressedEnd - pCompressed) != 0)
+				{
+					printf("ERROR: q16_compressPixelsT() gives a different stream.\n");
+					pixelsOk = 0;
+				}
+				else if (resT.readEnd != pCompressedEnd || resT.writeEnd != pRawOutputT + nbPixels || memcmp(pRawOutputT, pRawInput, nbPixels * 2) != 0)
+				{
+					printf("ERROR: q16_decompressPixelsT() gives different pixels.\n");
+					pixelsOk = 0;
+				}
+				free( pCompressedT );
+				free( pRawOutputT );
+			}
 
 			// Alpha
 

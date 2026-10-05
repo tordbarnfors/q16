@@ -62,7 +62,6 @@ short imp_module_main( GARGAMEL * smurf_struct )
 	unsigned long nbPixels;
 	uint16_t * pixels;
 	uint8_t * alpha = NULL;
-	uint8_t * table;
 	q16_result res;
 	const uint8_t * p;
 
@@ -74,21 +73,18 @@ short imp_module_main( GARGAMEL * smurf_struct )
 
 	nbPixels = (unsigned long) width * height;
 	pixels = SMALLOC( smurf_struct, nbPixels * 2 );
-	table = SMALLOC( smurf_struct, 65536 );
 	if( alphaBytes )
 		alpha = SMALLOC( smurf_struct, nbPixels );
-	if( !pixels || !table || (alphaBytes && !alpha) )
+	if( !pixels || (alphaBytes && !alpha) )
 	{
 		if( pixels ) SMFREE( smurf_struct, pixels );
-		if( table ) SMFREE( smurf_struct, table );
 		if( alpha ) SMFREE( smurf_struct, alpha );
 		return M_MEMORY;
 	}
 
-	q16_setupStaticTable( table );
 	p = file + sizeof(q16_fileheader);
 	q16_beginPixelDecompression( instance );
-	res = q16_decompressPixels( pixels, p, p + pixelBytes, instance, table );
+	res = q16_decompressPixels( pixels, p, p + pixelBytes, instance );
 	if( res.readEnd != p + pixelBytes || res.writeEnd != pixels + nbPixels )
 		goto corrupt;
 
@@ -102,7 +98,6 @@ short imp_module_main( GARGAMEL * smurf_struct )
 		blend_white( pixels, alpha, nbPixels );
 		SMFREE( smurf_struct, alpha );
 	}
-	SMFREE( smurf_struct, table );
 
 	SMFREE( smurf_struct, file );
 	pic->pic_data = pixels;
@@ -116,7 +111,6 @@ short imp_module_main( GARGAMEL * smurf_struct )
 
 corrupt:
 	SMFREE( smurf_struct, pixels );
-	SMFREE( smurf_struct, table );
 	if( alpha ) SMFREE( smurf_struct, alpha );
 	return M_PICERR;
 }

@@ -30,11 +30,7 @@ int main( int argc, char * argv[] )
 		return -1;
 	}
 
-	uint8_t * staticTable = malloc(65536);
-
 	uint16_t instanceTable[65];
-
-	q16_setupStaticTable( staticTable );
 
 
 	for( int file = 1 ; file < argc ; file++ )
@@ -95,7 +91,7 @@ int main( int argc, char * argv[] )
 			uint8_t * pCompressedAlpha = malloc(q16_minAlphaCompressionBuffer(nbPixels, 1));
 
 			q16_beginPixelCompression(instanceTable);
-			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRaw16, pRaw16 + nbPixels, instanceTable, staticTable );
+			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRaw16, pRaw16 + nbPixels, instanceTable );
 
 			uint8_t * pCompressedAlphaEnd = pCompressedAlpha;
 			if( hasAlpha )
@@ -154,8 +150,6 @@ cleanup:
 		  printf( "ERROR: Couldn't read '%s' as an image file. File non-existant or not a supported image type.\n", pInputFilename );
 		}
 	}
-
-	free( staticTable );
 
 	return 0;
 }

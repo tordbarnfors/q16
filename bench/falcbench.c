@@ -6,9 +6,10 @@
 *   ending with _F.PNG are skipped) with the following decoders, repeating
 *   each decode for at least two seconds:
 *
-*   Q16:  asm      - m68k/q16dec.s
-*         asmF     - m68k/q16decf.s (no static table)
-*         C        - q16_lib.c
+*   Q16:  asm      - m68k/q16dec.s, q_decPix()
+*         asmT     - m68k/q16dect.s, q_decPxT() with the static table
+*         C        - q16_lib.c, q16_decompressPixels()
+*         CT       - q16_lib.c, q16_decompressPixelsT() with the static table
 *   PNG:  libpng   - libpng + zlib, to 8-bit RGB(A)
 *         stb      - stb_image, to 8-bit RGB(A)
 *   JPEG: turbo    - libjpeg-turbo with default settings, to 8-bit RGB
@@ -18,8 +19,10 @@
 *
 *   For each PNG it also times encoding the decoded pixels with:
 *
-*   Q16:  asm      - m68k/q16enc.s
-*         C        - q16_lib.c
+*   Q16:  asm      - m68k/q16enc.s, q_encPix()
+*         asmT     - m68k/q16enct.s, q_encPxT() with the static table
+*         C        - q16_lib.c, q16_compressPixels()
+*         CT       - q16_lib.c, q16_compressPixelsT() with the static table
 *   PNG:  libpng   - libpng + zlib, default compression (level 6)
 *   JPEG: turbo    - libjpeg-turbo, quality 90 and 75 (not if alpha)
 *
@@ -27,8 +30,8 @@
 *   quits the emulator when done (Native Features), on real hardware it
 *   waits for a key.
 *
-*   It also verifies that the asm and C Q16 decoders, as well as libpng and
-*   stb_image, give identical results, and that NAME.Q16 decodes to the same
+*   It also verifies that all Q16 decoders, all Q16 encoders, as well as
+*   libpng and stb_image, give identical results, and that NAME.Q16 decodes to the same
 *   pixels as NAME.PNG.
 *
 *=========================================================================*/
@@ -58,16 +61,21 @@
 
 typedef struct { const unsigned char * readEnd; void * writeEnd; } c_q16_result;
 
+void			c_q16_setupStaticTable( unsigned char staticTable[65536] );
 void			c_q16_beginPixelDecompression( unsigned short instanceTable[65] );
 c_q16_result	c_q16_decompressPixels( unsigned short * pDest, const unsigned char * pBegin, const unsigned char * pEnd,
-										unsigned short instanceTable[65], const unsigned char staticTable[65536] );
+										unsigned short instanceTable[65] );
+c_q16_result	c_q16_decompressPixelsT( unsigned short * pDest, const unsigned char * pBegin, const unsigned char * pEnd,
+										 unsigned short instanceTable[65], const unsigned char staticTable[65536] );
 void			c_q16_beginAlphaDecompression( unsigned char instanceTable[1] );
 c_q16_result	c_q16_decompressAlpha( unsigned char * pDest, const unsigned char * pBegin, const unsigned char * pEnd,
 									   unsigned char instanceTable[1] );
 
 void			c_q16_beginPixelCompression( unsigned short instanceTable[65] );
 unsigned char *	c_q16_compressPixels( unsigned char * pDest, const unsigned short * pBegin, const unsigned short * pEnd,
-									  unsigned short instanceTable[65], const unsigned char staticTable[65536] );
+									  unsigned short instanceTable[65] );
+unsigned char *	c_q16_compressPixelsT( unsigned char * pDest, const unsigned short * pBegin, const unsigned short * pEnd,
+									   unsigned short instanceTable[65], const unsigned char staticTable[65536] );
 unsigned char *	c_q16_compressAlpha( unsigned char * pDest, const unsigned char * pBegin, const unsigned char * pEnd );
 
 int nf_shutdown( void );		/* natfeats.s */
@@ -150,24 +158,26 @@ static int dec_q16_asm( void )
 	unsigned long n = (unsigned long) g_q16w * g_q16h;
 	const unsigned char * p = g_file + sizeof(q16_fileheader);
 
-	if( q_decPix( (unsigned short*) g_out, p, p + g_pixelBytes, n, g_staticTable ) != 0 )
+	if( q_decPix( (unsigned short*) g_out, p, p + g_pixelBytes, n ) != 0 )
 		return -1;
 	if( g_alphaBytes && q_decAlp( g_alpha, p + g_pixelBytes, p + g_pixelBytes + g_alphaBytes, n ) != 0 )
 		return -1;
 	return 0;
 }
 
-static int dec_q16_asmF( void )
+static int dec_q16_asmT( void )
 {
 	unsigned long n = (unsigned long) g_q16w * g_q16h;
 	const unsigned char * p = g_file + sizeof(q16_fileheader);
 
-	if( q_decPixF( (unsigned short*) g_out, p, p + g_pixelBytes, n ) != 0 )
+	if( q_decPxT( (unsigned short*) g_out, p, p + g_pixelBytes, n, g_staticTable ) != 0 )
 		return -1;
 	if( g_alphaBytes && q_decAlp( g_alpha, p + g_pixelBytes, p + g_pixelBytes + g_alphaBytes, n ) != 0 )
 		return -1;
 	return 0;
 }
+
+static int g_useTable;		/* Use the ...T functions in dec_q16_c() and enc_q16_c(). */
 
 static int dec_q16_c( void )
 {
@@ -178,7 +188,10 @@ static int dec_q16_c( void )
 	c_q16_result res;
 
 	c_q16_beginPixelDecompression( instance );
-	res = c_q16_decompressPixels( (unsigned short*) g_out, p, p + g_pixelBytes, instance, g_staticTable );
+	if( g_useTable )
+		res = c_q16_decompressPixelsT( (unsigned short*) g_out, p, p + g_pixelBytes, instance, g_staticTable );
+	else
+		res = c_q16_decompressPixels( (unsigned short*) g_out, p, p + g_pixelBytes, instance );
 	if( res.readEnd != p + g_pixelBytes || res.writeEnd != ((unsigned short*) g_out) + n )
 		return -1;
 
@@ -353,7 +366,18 @@ static int enc_q16_asm( void )
 {
 	unsigned long n = (unsigned long) g_width * g_height;
 	unsigned char * p = e_buf + sizeof(q16_fileheader);
-	unsigned char * pAlpha = q_encPix( p, e_pixels, e_pixels + n, g_staticTable );
+	unsigned char * pAlpha = q_encPix( p, e_pixels, e_pixels + n );
+	unsigned char * pEnd = e_alpha ? q_encAlp( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
+	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
+	e_len = pEnd - e_buf;
+	return 0;
+}
+
+static int enc_q16_asmT( void )
+{
+	unsigned long n = (unsigned long) g_width * g_height;
+	unsigned char * p = e_buf + sizeof(q16_fileheader);
+	unsigned char * pAlpha = q_encPxT( p, e_pixels, e_pixels + n, g_staticTable );
 	unsigned char * pEnd = e_alpha ? q_encAlp( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
 	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
 	e_len = pEnd - e_buf;
@@ -368,7 +392,10 @@ static int enc_q16_c( void )
 	unsigned char * pAlpha, * pEnd;
 
 	c_q16_beginPixelCompression( instance );
-	pAlpha = c_q16_compressPixels( p, e_pixels, e_pixels + n, instance, g_staticTable );
+	if( g_useTable )
+		pAlpha = c_q16_compressPixelsT( p, e_pixels, e_pixels + n, instance, g_staticTable );
+	else
+		pAlpha = c_q16_compressPixels( p, e_pixels, e_pixels + n, instance );
 	pEnd = e_alpha ? c_q16_compressAlpha( pAlpha, e_alpha, e_alpha + n ) : pAlpha;
 	q16_writeHeader( (q16_fileheader*) e_buf, g_width, g_height, pAlpha - p, pEnd - pAlpha, 0 );
 	e_len = pEnd - e_buf;
@@ -473,12 +500,22 @@ static void encode_tests( const char * name )
 	report_enc( name, "enc asm", t, e_len );
 	asmLen = e_len;
 	memcpy( asmCopy, e_buf, e_len );
-	t = time_decoder( enc_q16_c );
-	report_enc( name, "enc C", t, e_len );
+	t = time_decoder( enc_q16_asmT );
+	report_enc( name, "enc asmT", t, e_len );
 	if( e_len != asmLen || memcmp( asmCopy, e_buf, e_len ) != 0 )
 	{
-		out( "  ERROR: asm and C encoders differ\n" );
+		out( "  ERROR: asm and asmT encoders differ\n" );
 		g_errors++;
+	}
+	for( g_useTable = 0 ; g_useTable < 2 ; g_useTable++ )
+	{
+		t = time_decoder( enc_q16_c );
+		report_enc( name, g_useTable ? "enc CT" : "enc C", t, e_len );
+		if( e_len != asmLen || memcmp( asmCopy, e_buf, e_len ) != 0 )
+		{
+			out( "  ERROR: asm and %s encoders differ\n", g_useTable ? "CT" : "C" );
+			g_errors++;
+		}
 	}
 	t = time_decoder( enc_libpng );
 	report_enc( name, "enc png", t, e_len );
@@ -593,9 +630,14 @@ int main( void )
 
 	t0 = clock();
 	for( i = 0 ; i < 20 ; i++ )
+		c_q16_setupStaticTable( g_staticTable );
+	t0 = clock() - t0;
+	out( "q16_setupStaticTable: C %ld.%02ld ms, ", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
+	t0 = clock();
+	for( i = 0 ; i < 20 ; i++ )
 		q16_setupStaticTable( g_staticTable );
 	t0 = clock() - t0;
-	out( "q16_setupStaticTable: %ld.%02ld ms\n\n", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
+	out( "asm %ld.%02ld ms\n\n", (long) t0 * 50 / CLOCKS_PER_SEC, (long) t0 * 5000 / CLOCKS_PER_SEC % 100 );
 
 	out( "%-12s %8s  %-9s %9s\n", "File", "Bytes", "Decoder", "Time" );
 
@@ -642,18 +684,21 @@ int main( void )
 			{
 				report( name, "asm", time_decoder( dec_q16_asm ) );
 				sumAsm = checksum_q16();
-				report( name, "asmF", time_decoder( dec_q16_asmF ) );
+				report( name, "asmT", time_decoder( dec_q16_asmT ) );
 				if( checksum_q16() != sumAsm )
 				{
-					out( "  ERROR: asm and asmF decoders differ\n" );
+					out( "  ERROR: asm and asmT decoders differ\n" );
 					g_errors++;
 				}
-				report( name, "C", time_decoder( dec_q16_c ) );
-				sumC = checksum_q16();
-				if( sumAsm != sumC )
+				for( g_useTable = 0 ; g_useTable < 2 ; g_useTable++ )
 				{
-					out( "  ERROR: asm and C decoders differ\n" );
-					g_errors++;
+					report( name, g_useTable ? "CT" : "C", time_decoder( dec_q16_c ) );
+					sumC = checksum_q16();
+					if( sumAsm != sumC )
+					{
+						out( "  ERROR: asm and %s decoders differ\n", g_useTable ? "CT" : "C" );
+						g_errors++;
+					}
 				}
 				v->q16sum = sumAsm;
 				v->hasQ16 = 1;

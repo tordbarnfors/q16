@@ -3,6 +3,7 @@
 #include "stb_image.h"
 
 #include "q16_lib.h"
+#include <string.h>
 
 /*=========================================================================
 *
@@ -48,66 +49,154 @@ int main( int argc, char * argv[] )
 		printf("Processing %s... ", pInputFilename);
 
 		int width, height, channels;
-		stbi_uc* data = stbi_load(pInputFilename, &width, &height, &channels, 0);
+		stbi_uc* data = stbi_load(pInputFilename, &width, &height, &channels, 4);	// Always expand to RGBA.
 
-		if (data && (channels == 3 || channels == 4) )
+		if (data)
 		{
-			uint16_t * 	pRawInput = malloc(width * height*2);
+			int nbPixels = width * height;
+
+			uint16_t * 	pRawInput = malloc(nbPixels * 2);
+			uint8_t *	pRawAlphaInput = malloc(nbPixels);
 			uint8_t * 	pRead = (uint8_t*) data;
 
-			int skipAlpha = channels - 3;
+			int hasAlpha = 0;
 
-			for( int i = 0 ; i < width * height ; i++ )
+			for( int i = 0 ; i < nbPixels ; i++ )
 			{
 				uint8_t r = * pRead++ >> 3;
 				uint8_t g = * pRead++ >> 2;
 				uint8_t b = * pRead++ >> 3;
-				pRead += skipAlpha;
+				uint8_t a = * pRead++;
 
 				pRawInput[i] = (r << 11) | (g << 5) | b; 
+				pRawAlphaInput[i] = a;
+
+				if( a != 255 )
+					hasAlpha = 1;
 			}
 
 			stbi_image_free(data);
 
-			int nbPixels = width * height;
+			// Pixels
 
-			uint8_t * pCompressed = malloc(nbPixels * 2 + nbPixels / 32 + 2 + 9);
+			uint8_t * pCompressed = malloc(q16_minPixelCompressionBuffer(nbPixels, 1) + 9);
 
-			q16_beginCompression(instanceTable);
+			q16_beginPixelCompression(instanceTable);
 
-			uint8_t * pCompressedEnd = q16_compressData( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
-			pCompressedEnd = q16_endCompression(pCompressedEnd);
+			uint8_t * pCompressedEnd = q16_compressPixels( pCompressed, pRawInput, pRawInput + nbPixels, instanceTable );
 			strcpy((char*)pCompressedEnd, "NANANANA");
 
 			uint16_t* pRawOutput = malloc(nbPixels * 2 + 9);
 
 			strcpy(((char*)pRawOutput) + nbPixels * 2, "DEADBEEF");
 
-			q16_beginDecompression(instanceTable);
+			q16_beginPixelDecompression(instanceTable);
 
-			q16_result res = q16_decompressData(pRawOutput, pCompressed, pCompressedEnd, instanceTable, staticTable );
+			q16_result res = q16_decompressPixels(pRawOutput, pCompressed, pCompressedEnd, instanceTable );
 
-			int nbWritten = (int) (res.writeEnd - pRawOutput);
+			int nbWritten = (int) (((uint16_t*)res.writeEnd) - pRawOutput);
 			int nbCompared = nbWritten < nbPixels ? nbWritten : nbPixels;
 
 			int ofs = 0;
 			while (ofs < nbCompared && pRawOutput[ofs] == pRawInput[ofs])
 				ofs++;
 
+			int pixelsOk = 0;
+
 			if (ofs < nbCompared)
 				printf("ERROR: Pixel start being different at offset %d.\n", ofs);
 			else if (strncmp(((char*)pRawOutput) + nbPixels * 2, "DEADBEEF", 8) != 0)
-				printf("ERROR: Wrote beyond end of output.\n");
+				printf("ERROR: Wrote beyond end of pixel output.\n");
 			else if (nbWritten != nbPixels)
 				printf("ERROR: Decompressed %d pixels, expected %d.\n", nbWritten, nbPixels);
-			else if (!res.endOfStream || res.readEnd != pCompressedEnd)
-				printf("ERROR: End of stream not detected where expected.\n");
+			else if (res.readEnd != pCompressedEnd)
+				printf("ERROR: Pixel decompression stopped before end of stream.\n");
 			else
-				printf("SUCCESS\n");
+				pixelsOk = 1;
+
+			// The ...T versions with the static table must give the same results.
+
+			if (pixelsOk)
+			{
+				uint8_t * pCompressedT = malloc(q16_minPixelCompressionBuffer(nbPixels, 1));
+				uint16_t * pRawOutputT = malloc(nbPixels * 2);
+
+				q16_beginPixelCompression(instanceTable);
+				uint8_t * pCompressedEndT = q16_compressPixelsT( pCompressedT, pRawInput, pRawInput + nbPixels, instanceTable, staticTable );
+
+				q16_beginPixelDecompression(instanceTable);
+				q16_result resT = q16_decompressPixelsT( pRawOutputT, pCompressed, pCompressedEnd, instanceTable, staticTable );
+
+				if (pCompressedEndT - pCompressedT != pCompressedEnd - pCompressed || memcmp(pCompressedT, pCompressed, pCompressedEnd - pCompressed) != 0)
+				{
+					printf("ERROR: q16_compressPixelsT() gives a different stream.\n");
+					pixelsOk = 0;
+				}
+				else if (resT.readEnd != pCompressedEnd || resT.writeEnd != pRawOutputT + nbPixels || memcmp(pRawOutputT, pRawInput, nbPixels * 2) != 0)
+				{
+					printf("ERROR: q16_decompressPixelsT() gives different pixels.\n");
+					pixelsOk = 0;
+				}
+				free( pCompressedT );
+				free( pRawOutputT );
+			}
+
+			// Alpha
+
+			int alphaOk = 1;
+			uint8_t * pCompressedAlpha = NULL;
+			uint8_t * pCompressedAlphaEnd = NULL;
+			uint8_t * pRawAlphaOutput = NULL;
+
+			if (pixelsOk && hasAlpha)
+			{
+				alphaOk = 0;
+
+				pCompressedAlpha = malloc(q16_minAlphaCompressionBuffer(nbPixels, 1) + 9);
+				pCompressedAlphaEnd = q16_compressAlpha(pCompressedAlpha, pRawAlphaInput, pRawAlphaInput + nbPixels);
+				strcpy((char*)pCompressedAlphaEnd, "NANANANA");
+
+				pRawAlphaOutput = malloc(nbPixels + 9);
+				strcpy(((char*)pRawAlphaOutput) + nbPixels, "DEADBEEF");
+
+				uint8_t alphaInstanceTable[1];
+
+				q16_beginAlphaDecompression(alphaInstanceTable);
+				res = q16_decompressAlpha(pRawAlphaOutput, pCompressedAlpha, pCompressedAlphaEnd, alphaInstanceTable);
+
+				nbWritten = (int) (((uint8_t*)res.writeEnd) - pRawAlphaOutput);
+				nbCompared = nbWritten < nbPixels ? nbWritten : nbPixels;
+
+				ofs = 0;
+				while (ofs < nbCompared && pRawAlphaOutput[ofs] == pRawAlphaInput[ofs])
+					ofs++;
+
+				if (ofs < nbCompared)
+					printf("ERROR: Alpha start being different at offset %d.\n", ofs);
+				else if (strncmp(((char*)pRawAlphaOutput) + nbPixels, "DEADBEEF", 8) != 0)
+					printf("ERROR: Wrote beyond end of alpha output.\n");
+				else if (nbWritten != nbPixels)
+					printf("ERROR: Decompressed %d alpha values, expected %d.\n", nbWritten, nbPixels);
+				else if (res.readEnd != pCompressedAlphaEnd)
+					printf("ERROR: Alpha decompression stopped before end of stream.\n");
+				else
+					alphaOk = 1;
+			}
+
+			if (pixelsOk && alphaOk)
+			{
+				if (hasAlpha)
+					printf("SUCCESS (pixels: %d bytes, alpha: %d bytes)\n", (int)(pCompressedEnd - pCompressed), (int)(pCompressedAlphaEnd - pCompressedAlpha));
+				else
+					printf("SUCCESS (pixels: %d bytes, no alpha)\n", (int)(pCompressedEnd - pCompressed));
+			}
 
 			free( pRawInput );
-			free(pRawOutput);
+			free( pRawAlphaInput );
+			free( pRawOutput );
+			free( pRawAlphaOutput );
 			free( pCompressed );
+			free( pCompressedAlpha );
 		}
 		else
 		{

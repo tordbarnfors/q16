@@ -53,3 +53,23 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Benchmark build output
+bench/FALCBNCH.TOS
+
+# Shower build output
+shower/SHOWER.TTP
+shower/test/LAUNCH.TOS
+shower/test/shots/
+shower/test/hatari.log
+plugins/zview/Q16.LDG
+plugins/zview/test/ZVTEST.PRG
+plugins/zview/zview-include/
+plugins/gemview/Q16.GVL
+plugins/gemview/Q16.GVS
+plugins/smurf/Q16.SIM
+plugins/smurf/Q16.SXM
+plugins/smurf/test/SMURFTST.TOS
+plugins/smurf/test/SMURFTPC.TOS
+plugins/smurf/purec/
+plugins/smurf/smurf-include/

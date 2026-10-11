@@ -40,6 +40,10 @@
 #define Q565_IS_LITTLE_ENDIAN 0
 #endif
 
+// The file header must be 20 bytes without padding on all platforms.
+
+typedef char q16_fileheader_size_check[ sizeof(q16_fileheader) == 20 ? 1 : -1 ];
+
 // This table is used for quick addition and subtraction of pixel delta values.
 
 static const uint16_t deltaTable[128][2] = {
@@ -86,6 +90,27 @@ static inline uint16_t fromLittleEndian( uint16_t value )
 		return endianSwap16(value);
 }
 
+static inline uint32_t endianSwap32( uint32_t in )
+{
+	return (in >> 24) | ((in >> 8) & 0x0000FF00) | ((in << 8) & 0x00FF0000) | (in << 24);
+}
+
+static inline uint32_t toLittleEndian32( uint32_t value )
+{
+	if( Q565_IS_LITTLE_ENDIAN )
+		return value;
+	else
+		return endianSwap32(value);
+}
+
+static inline uint32_t fromLittleEndian32( uint32_t value )
+{
+	if( Q565_IS_LITTLE_ENDIAN )
+		return value;
+	else
+		return endianSwap32(value);
+}
+
 //____ q16_version() __________________________________________________________
 
 int q16_version(void)
@@ -93,47 +118,83 @@ int q16_version(void)
 	return 1;
 }
 
-//____ q16_minCompressionBuffer() _____________________________________________
+//____ q16_minPixelCompressionBuffer() ________________________________________
 
-uint32_t q16_minCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls)
+uint32_t q16_minPixelCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls)
 {
-	return nbPixels * 2 + nbPixels / 32 + nbCalls + 1;	// Worst case is storing everything as literals with a new opcode every 32 pixels and EOS at the end.
+	return nbPixels * 2 + nbPixels / 32 + nbCalls;		// Worst case is storing everything as literals with a new opcode every 32 pixels.
 }
+
+//____ q16_minAlphaCompressionBuffer() ________________________________________
+
+uint32_t q16_minAlphaCompressionBuffer(uint32_t nbPixels, uint32_t nbCalls)
+{
+	return nbPixels + nbPixels / 128 + nbCalls;			// Worst case is storing everything verbatim with a new opcode every 128 values.
+}
+
+
+//____ pixelToIndex() ________________________________________________________
+//
+// Palette index of a pixel. The static table holds this for every pixel.
+
+static inline uint8_t pixelToIndex( uint16_t p )
+{
+	return (uint8_t)((p + (p >> 3) + (p >> 4) + (p >> 10)) & 63);
+}
+
+// The pixel compression and decompression functions are written once and
+// inlined into the functions without the table (useTable is 0, the palette
+// index is calculated) and the ...T functions (useTable is 1, the palette
+// index is looked up in pixelToIndexTable). useTable is a constant in each,
+// so the compiler removes the test.
+
+#if defined(__GNUC__)
+#	define Q16_ALWAYS_INLINE	static inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#	define Q16_ALWAYS_INLINE	static __forceinline
+#else
+#	define Q16_ALWAYS_INLINE	static inline
+#endif
+
+#define PIXEL_INDEX(p)		(useTable ? pixelToIndexTable[p] : pixelToIndex(p))
 
 
 //____ q16_setupStaticTable() ___________________________________________________________
 
+#ifndef Q16_NO_STATIC_TABLE
 void q16_setupStaticTable( uint8_t pixelToIndexTable[65536] )
 {
 	// Generate pixelToIndexTable. Decides which of the 64 palette entries
 	// each pixel should go into.
 
 	for (uint32_t i = 0; i < 65536; i++)
-	{
-		uint16_t p = i;
-		pixelToIndexTable[i] = (uint8_t)((p + (p >> 3) + (p >> 4) + (p >> 10)) & 63);
-	}
+		pixelToIndexTable[i] = pixelToIndex((uint16_t)i);
 }
+#endif
 
 
 //____ q16_readHeader() ______________________________________________________
 
-int q16_readHeader( const q16_fileheader * header, uint16_t * width, uint16_t * height, uint8_t * version, uint8_t * flags )
+int q16_readHeader( const q16_fileheader * header, uint16_t * width, uint16_t * height, uint32_t * pixelBytes, uint32_t * alphaBytes, uint8_t * flags, uint8_t * version )
 {
 	if (header->magic[0] != 'Q' || header->magic[1] != '5' || header->magic[2] != '6' || header->magic[3] != '5')
 	{
 		*width = 0;
 		*height = 0;
-		*version = 0;
+		*pixelBytes = 0;
+		*alphaBytes = 0;
 		*flags = 0;
+		*version = 0;
 		return -1;				// Not a Q16 file.
 	}
 
 
 	* width = fromLittleEndian(header->width);
 	* height = fromLittleEndian(header->height);
-	* version = header->version;
+	* pixelBytes = fromLittleEndian32(header->pixelBytes);
+	* alphaBytes = fromLittleEndian32(header->alphaBytes);
 	* flags = header->flags;
+	* version = header->version;
 
 	if (header->version != 1)
 		return -2;				// Version unsupported by this version of the library.
@@ -144,40 +205,39 @@ int q16_readHeader( const q16_fileheader * header, uint16_t * width, uint16_t * 
 
 //____ q16_writeHeader() ______________________________________________________
 
-void q16_writeHeader( q16_fileheader * header, uint16_t width, uint16_t height, uint8_t flags )
+void q16_writeHeader( q16_fileheader * header, uint16_t width, uint16_t height, uint32_t pixelBytes, uint32_t alphaBytes, uint8_t flags )
 {
 	header->magic[0] = 'Q';
 	header->magic[1] = '5';
 	header->magic[2] = '6';	
 	header->magic[3] = '5';
 
-	header->width = toLittleEndian(width);
-	header->height = toLittleEndian(height);
 	header->version = 1;
 	header->flags = flags;
+	header->width = toLittleEndian(width);
+	header->height = toLittleEndian(height);
+	header->dummy = 0;
+	header->pixelBytes = toLittleEndian32(pixelBytes);
+	header->alphaBytes = toLittleEndian32(alphaBytes);
 }
 
-//____ q16_beginDecompression() ___________________________________________________________
+//____ q16_beginPixelDecompression() ______________________________________________________
 
-void q16_beginDecompression(uint16_t instanceData[65])
+void q16_beginPixelDecompression(uint16_t instanceData[65])
 {
 	for (int i = 0; i < 65; i++)
 		instanceData[i] = 0;
 }
 
 
-//____ q16_decompressData() __________________________________________________
+//____ q16_decompressPixels() / q16_decompressPixelsT() ________________________
 
-q16_result q16_decompressData(	uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, 
-								uint16_t instanceData[65], const uint8_t staticData[65536] )
+Q16_ALWAYS_INLINE q16_result decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
+											  uint16_t instanceData[65], const uint8_t * pixelToIndexTable, const int useTable )
 {
-	const uint8_t * pixelToIndexTable = staticData;
 	uint16_t*	palette = instanceData + 1;
 	uint16_t	  lastPixel = instanceData[0];
 	const uint8_t * pRead = pBegin;
-
-	q16_result res;
-	res.endOfStream = 0;
 
 	while (pRead < pEnd)
 	{
@@ -200,7 +260,7 @@ q16_result q16_decompressData(	uint16_t * pDest, const uint8_t * pBegin, const u
 					lastPixel |= ((uint16_t)(*pRead++)) << 8;
 					*pDest++ = lastPixel;
 
-					palette[pixelToIndexTable[lastPixel]] = lastPixel;
+					palette[PIXEL_INDEX(lastPixel)] = lastPixel;
 				}
 			}
 			else
@@ -220,44 +280,50 @@ q16_result q16_decompressData(	uint16_t * pDest, const uint8_t * pBegin, const u
 			}
 			else
 			{
-				if (v == 0xD2)						// End of stream
-				{
-					res.endOfStream = 1;
-					break;
-				}
-
-
 				int index = v & 0x7F;
 				lastPixel += deltaTable[index][0];
 				lastPixel -= deltaTable[index][1];
 
 				*pDest++ = lastPixel;
-				palette[pixelToIndexTable[lastPixel]] = lastPixel;
+				palette[PIXEL_INDEX(lastPixel)] = lastPixel;
 			}
 		}
 	}
 
 	instanceData[0] = lastPixel;
+
+	q16_result res;
 	res.readEnd = pRead;
 	res.writeEnd = pDest;
 	return res;
 }
 
-//____ q16_beginCompression() ___________________________________________________________
+q16_result q16_decompressPixels( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, uint16_t instanceData[65] )
+{
+	return decompressPixels( pDest, pBegin, pEnd, instanceData, NULL, 0 );
+}
 
-void q16_beginCompression(uint16_t instanceData[65])
+#ifndef Q16_NO_STATIC_TABLE
+q16_result q16_decompressPixelsT( uint16_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd,
+								  uint16_t instanceData[65], const uint8_t staticData[65536] )
+{
+	return decompressPixels( pDest, pBegin, pEnd, instanceData, staticData, 1 );
+}
+#endif
+
+//____ q16_beginPixelCompression() ________________________________________________________
+
+void q16_beginPixelCompression(uint16_t instanceData[65])
 {
 	for (int i = 0; i < 65; i++)
 		instanceData[i] = 0;
 }
 
-//____ q16_compressData() __________________________________________________
+//____ q16_compressPixels() / q16_compressPixelsT() __________________________
 
-uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd, 
-						 uint16_t instanceData[65], const uint8_t staticData[65536] )
+Q16_ALWAYS_INLINE uint8_t * compressPixels( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd,
+											uint16_t instanceData[65], const uint8_t * pixelToIndexTable, const int useTable )
 {
-	const uint8_t* pixelToIndexTable = staticData;
-
 	uint16_t* palette = instanceData + 1;
 	uint16_t lastPixel = instanceData[0];
 
@@ -280,7 +346,7 @@ uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint
 		}
 		else
 		{
-			uint8_t index = pixelToIndexTable[pixel];
+			uint8_t index = PIXEL_INDEX(pixel);
 
 			if (palette[index] == pixel)
 				*pWrite++ = 0x40 | index;						// Store as index lookup
@@ -322,7 +388,7 @@ uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint
 						if (nextPixel == pixel)
 							break;				// Next pixel is start of repetive section
 
-						uint8_t nextIndex = pixelToIndexTable[nextPixel];
+						uint8_t nextIndex = PIXEL_INDEX(nextPixel);
 						if (palette[nextIndex] == nextPixel)
 							break;				// Next pixel can be taken from index;
 
@@ -365,10 +431,124 @@ uint8_t * q16_compressData( uint8_t * pDest, const uint16_t * pBegin, const uint
 	return pWrite;
 }
 
-//____ q16_endCompression() ___________________________________________________
-
-uint8_t* q16_endCompression(uint8_t* pDest)
+uint8_t * q16_compressPixels( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd, uint16_t instanceData[65] )
 {
-	*pDest++ = 0xD2;
-	return pDest;
+	return compressPixels( pDest, pBegin, pEnd, instanceData, NULL, 0 );
+}
+
+#ifndef Q16_NO_STATIC_TABLE
+uint8_t * q16_compressPixelsT( uint8_t * pDest, const uint16_t * pBegin, const uint16_t * pEnd,
+							   uint16_t instanceData[65], const uint8_t staticData[65536] )
+{
+	return compressPixels( pDest, pBegin, pEnd, instanceData, staticData, 1 );
+}
+#endif
+
+//____ q16_compressAlpha() ____________________________________________________
+//
+// Port of the 1-byte RLE compressor from WonderGUI, without the primitive size byte.
+
+uint8_t* q16_compressAlpha( uint8_t* pDest, const uint8_t* pBegin, const uint8_t* pEnd )
+{
+	if( pBegin >= pEnd )
+		return pDest;
+
+	const uint8_t* pRead = pBegin;
+	uint8_t* pWrite = pDest;
+
+	uint8_t* pSpanHead = pWrite++;
+	uint8_t last = *pRead++;
+	*pWrite++ = last;
+
+	int span = 1;
+
+	while( pRead < pEnd )
+	{
+		if( (pRead + 1) < pEnd && pRead[0] == last && pRead[1] == last )
+		{
+			*pSpanHead = (uint8_t)(span - 1);
+
+			long repeats = 2;					// long, since a run can be longer than a 16-bit int.
+			while( repeats < pEnd - pRead && pRead[repeats] == last )
+				repeats++;
+
+			while( repeats >= 2 )
+			{
+				int nToWrite = repeats < 128 ? (int) repeats : 128;
+				*pWrite++ = (uint8_t)(-nToWrite);
+				repeats -= nToWrite;
+				pRead += nToWrite;
+			}
+
+			if( pRead == pEnd )
+				return pWrite;
+
+			pSpanHead = pWrite++;
+			span = 0;
+		}
+		else
+		{
+			if( span == 128 )
+			{
+				*pSpanHead = 127;
+				pSpanHead = pWrite++;
+				span = 0;
+			}
+		}
+
+		last = *pRead++;
+		*pWrite++ = last;
+		span++;
+	}
+
+	*pSpanHead = (uint8_t)(span - 1);
+	return pWrite;
+}
+
+//____ q16_beginAlphaDecompression() __________________________________________
+
+void q16_beginAlphaDecompression(uint8_t instanceData[1])
+{
+	instanceData[0] = 0;
+}
+
+//____ q16_decompressAlpha() __________________________________________________
+
+q16_result q16_decompressAlpha( uint8_t * pDest, const uint8_t * pBegin, const uint8_t * pEnd, uint8_t instanceData[1] )
+{
+	uint8_t lastAlpha = instanceData[0];
+	const uint8_t * pRead = pBegin;
+	uint8_t * pWrite = pDest;
+
+	while( pRead < pEnd )
+	{
+		int length = (int8_t) *pRead++;
+
+		if( length >= 0 )
+		{
+			length++;
+			if( pEnd - pRead < length )
+			{
+				pRead--;
+				break;
+			}
+
+			for( int i = 0 ; i < length ; i++ )
+				*pWrite++ = *pRead++;
+
+			lastAlpha = pRead[-1];
+		}
+		else
+		{
+			for( int i = 0 ; i < -length ; i++ )
+				*pWrite++ = lastAlpha;
+		}
+	}
+
+	instanceData[0] = lastAlpha;
+
+	q16_result res;
+	res.readEnd = pRead;
+	res.writeEnd = pWrite;
+	return res;
 }

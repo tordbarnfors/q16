@@ -137,7 +137,9 @@ the stream, and each part if it is compressed in several, with a verbatim
 code. The alpha stream is at most n + n / 128 + 1 bytes for n values, plus
 1 byte for each additional part.
 
-## Reference decoder
+## Reference decoders
+
+Pixels, into `uint16_t *out`:
 
 ```c
 uint16_t prev = 0, palette[64] = {0};
@@ -166,6 +168,25 @@ while (p < end) {
 }
 ```
 
+Alpha, into `uint8_t *out`:
+
+```c
+uint8_t prevAlpha = 0;
+const uint8_t *p = alphaStream, *end = alphaStream + alphaBytes;
+
+while (p < end) {
+    int c = (int8_t)*p++;
+    if (c >= 0) {                                     // verbatim
+        for (int i = 0; i <= c; i++)
+            *out++ = *p++;
+        prevAlpha = out[-1];
+    } else {                                          // repeat
+        for (int i = 0; i < -c; i++)
+            *out++ = prevAlpha;
+    }
+}
+```
+
 `HASH(p)` is the palette index formula above. A real decoder must also
-check that no op reads past the end of the stream or writes more than
-width × height pixels.
+check that no op or code reads past the end of its stream or writes more
+than width × height values.

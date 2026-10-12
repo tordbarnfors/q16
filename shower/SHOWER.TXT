@@ -21,7 +21,7 @@ WHAT IS SHOWER?
 ---------------
 
 Shower is a simple, fast and easy to use Pictureviewer. It supports
-20 different fileformats (14 if you count all the six Degas-formats
+21 different fileformats (15 if you count all the six Degas-formats
 as one) including popular formats as GIF, IFF and IMG.
 
 
@@ -124,6 +124,7 @@ Shower supports the following fileformats:
 .PI3		Degas Hi-res
 .PI9		Extended Degas (320*240 in 256 colors)
 .Q16		Q16 (RGB565 True Color, alpha is blended against black)
+.QOI		Quite OK Image (True Color, alpha is blended against black)
 .RAG		RAG-D!
 .RAW		Persistence of Vision (POV) Raytracer output.
 .TGA		Targa (only unpacked/RLE-packed 16/24/32-bit RGB images)
@@ -324,6 +325,10 @@ Version 1.2 (2026):
 	   from a disassembly of version 1.1 since the source code was lost.
 	   Q16 pictures are decoded without a 64 KB lookup table, which
 	   saves memory and a tenth of a second per picture.
+
+	+ QOI-support added. QOI (Quite OK Image) is a fast, lossless
+	   format for 24-bit pictures with optional alpha. The pictures
+	   are shown in 16-bit True Color, alpha is blended against black.
 
 	+ Targa-bugs fixed: pictures with a width that isn't a multiple
 	   of 16 were skewed, pictures stored bottom-up (most of them) were

@@ -86,11 +86,11 @@ def compare(shot, expected):
     if s.size[0] > 640:
         s = s.crop((s.size[0] - 640, 0, s.size[0], 480))
     e = Image.open(expected).convert("RGB")
-    # True color pictures (Targa, Q16, POV raw) are shown on a 320 x 240
+    # True color pictures (Targa, Q16, QOI, POV raw) are shown on a 320 x 240
     # screen, which Hatari doubles in both directions; pictures with bitplanes
     # on a 640 x 480 one.
     base = os.path.basename(expected)
-    scale = 2 if base.startswith(("T", "Q16", "RAW")) else 1
+    scale = 2 if base.startswith(("T", "Q16", "QOI", "QBIG", "RAW")) else 1
     sw, sh = s.size[0] // scale, s.size[1] // scale
     w, h = e.size
     rw = (w + 15) & ~15

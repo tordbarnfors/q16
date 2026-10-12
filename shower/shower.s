@@ -2,8 +2,8 @@
 ;
 ; Shower 1.1 by Blade of New Core (Tord Jansson), 1995, was disassembled
 ; from SHOWER.TTP with rg-dis 0.9.40 (Reservoir Gods) in Devpac 3 dialect,
-; since its source code was lost. Version 1.2 (2026) adds Q16 support and
-; fixes bugs in the Targa, GIF and BMP loaders, see SHOWER.TXT.
+; since its source code was lost. Version 1.2 (2026) adds Q16 and QOI
+; support and fixes bugs in the Targa, GIF and BMP loaders, see SHOWER.TXT.
 ;
 ; The labels and comments were added after the disassembly. Labels starting
 ; with a dot are local to the function they're in. The disassembly gave
@@ -3633,6 +3633,7 @@ q16_header:
 	move.w	8(a1),d0							; Height
 	ror.w	#8,d0
 	beq.w	exit
+	bmi.w	exit								; setup_screen needs it positive.
 	move.w	d0,8(a0)
 	move.w	#16,$a(a0)							; True color
 
@@ -3717,16 +3718,30 @@ q16_load:
 	bsr.w	q16_blend
 
 .copy:
+	bsr.s	q16_show
+	movem.l	(a7)+,d2-d7/a2-a6
+	rts
+
+.fail:
+	bsr.s	q16_free
+	bra.w	exit
+
+;	Copies the decoded pixels (q16_pixels) to the screen and frees the
+;	temporary buffers. Also used for QOI. Destroys d0-d7/a0-a3.
+
+q16_show:
+	moveq	#0,d7
+	move.w	picture_width(pc),d7				; d7 = width
 	movea.l	(q16_pixels).l,a0
 	movea.l	picture_start(pc),a1
 	movea.l	format(pc),a2
+	move.w	8(a2),d3							; Height
 	moveq	#0,d1
 	move.w	screen_width(pc),d1					; Screen width
 	add.l	d1,d1								; d1 = bytes per screen line
 	move.w	6(a2),d5
 	sub.w	d7,d5								; d5 = padding up to 16 pixels
 	subq.w	#1,d7
-	move.w	d6,d3
 	subq.w	#1,d3
 .line:
 	movea.l	a1,a3
@@ -3742,14 +3757,6 @@ q16_load:
 	dbra	d2,.pad
 	adda.l	d1,a1
 	dbra	d3,.line
-
-	bsr.s	q16_free
-	movem.l	(a7)+,d2-d7/a2-a6
-	rts
-
-.fail:
-	bsr.s	q16_free
-	bra.w	exit
 
 ;	Frees the temporary buffers.
 
@@ -3816,6 +3823,86 @@ q16_blend:
 	rts
 
 	include	"../m68k/q16dec.s"					; q_decPix, q_decAlp
+
+
+;____ QOI support, added in v1.2 ____________________________________________
+;
+;	QOI (https://qoiformat.org/) is 24-bit RGB with optional 8-bit alpha.
+;	qoi_dec (qoidec.s) decodes the picture into RGB565, blended against
+;	black like Q16, and q16_show copies it to the screen.
+
+;	Header parser. a0 = format table entry.
+
+qoi_header:
+	movea.l	file_buffer(pc),a1
+	cmpi.l	#14+8,(file_size).l					; Header and end marker
+	blo.w	exit
+	cmpi.l	#'qoif',(a1)
+	bne.w	exit
+	move.l	4(a1),d0							; Width, big endian
+	beq.w	exit
+	cmp.l	#$7ff0,d0
+	bhi.w	exit
+	move.w	d0,(picture_width).l				; Real width
+	addi.w	#15,d0
+	andi.w	#$fff0,d0
+	move.w	d0,6(a0)							; Width rounded up to 16 pixels
+	move.l	8(a1),d0							; Height
+	beq.w	exit
+	cmp.l	#$7fff,d0
+	bhi.w	exit
+	move.w	d0,8(a0)
+	move.w	#16,$a(a0)							; True color
+	move.b	12(a1),d0							; Channels, 3 or 4
+	subq.b	#3,d0
+	cmp.b	#1,d0
+	bhi.w	exit
+	cmpi.b	#1,13(a1)							; Colour space, 0 or 1
+	bhi.w	exit
+	rts
+
+;	Loader. Decodes the picture and copies it to the screen.
+
+qoi_load:
+	bsr.w	picture_position					; Calculate screen position.
+	movem.l	d2-d7/a2-a6,-(a7)
+
+	moveq	#0,d0
+	move.w	picture_width(pc),d0
+	movea.l	format(pc),a2
+	moveq	#0,d1
+	move.w	8(a2),d1
+	mulu.l	d1,d0
+	move.l	d0,(q16_pixels_count).l
+
+	add.l	d0,d0								; Pixels
+	move.l	d0,-(a7)
+	move.w	#72,-(a7)							; Malloc
+	trap	#1
+	addq.l	#6,a7
+	move.l	d0,(q16_pixels).l
+	beq.s	.fail
+
+	move.l	(q16_pixels_count).l,-(a7)
+	movea.l	file_buffer(pc),a3
+	move.l	a3,d0
+	add.l	(file_size).l,d0
+	subq.l	#8,d0								; End of data, before the end marker
+	move.l	d0,-(a7)
+	pea		14(a3)
+	move.l	(q16_pixels).l,-(a7)
+	bsr.w	qoi_dec
+	lea		16(a7),a7
+
+	bsr.w	q16_show
+	movem.l	(a7)+,d2-d7/a2-a6
+	rts
+
+.fail:
+	bsr.w	q16_free
+	bra.w	exit
+
+	include	"qoidec.s"							; qoi_dec
 
 	section	data
 skip_shiftmode:									; Restore the ST shift mode on exit if 0
@@ -3918,6 +4005,10 @@ format_table:									; Picture formats, see the description above
 	dc.b	".Q16",$00,$00,$ff,$ff,$ff,$ff,$ff,$ff	; Q16, added in v1.2
 	dc.l	q16_load
 	dc.l	q16_header
+	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+	dc.b	".QOI",$00,$00,$ff,$ff,$ff,$ff,$ff,$ff	; QOI, added in v1.2
+	dc.l	qoi_load
+	dc.l	qoi_header
 	dc.b	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 	dc.b	$00,$00,$00,$00						; End of table
 mode_offsets:									; Offset of the video mode for each depth in the video tables
@@ -4181,7 +4272,7 @@ title_text:										; Printed at start
 	dc.b	$0a,"Contr + Alt + F10    Save screen/color-dump",$0d,$0a,$0a
 	dc.b	$0a,"Written by Blade of New Core in 100% assembler.",$0d,$0a
 	dc.b	"GIF-Depacker by Sascha Springer.",$0d,$0a
-	dc.b	"Q16 support added in 2026.",$0d,$0a,$00
+	dc.b	"Q16 and QOI support added in 2026.",$0d,$0a,$00
 	dc.b	$00
 
 	section	bss

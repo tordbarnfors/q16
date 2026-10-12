@@ -16,13 +16,16 @@ BMP: B8.BMP (256 colours, 321 x 203), B8W.BMP (320 x 203) and B8TD.BMP
 (stored top-down).
 
 Larger than the screen (700 x 530): TBIG.TGA (24 bits, RLE, bottom-left
-origin) and GBIG.GIF (interlaced).
+origin), GBIG.GIF (interlaced) and QBIG.QOI.
 
 GIF: G87.GIF (GIF87a), GINT.GIF (interlaced), G89.GIF (GIF89a with a
 graphic control and a comment extension before the image).
 
 Q16: Q16.Q16 and Q16A.Q16 (with alpha, blended against black), written
 with gen_q16 (built from the repository) if given.
+
+QOI: QOI.QOI and QOIA.QOI (with alpha, blended against black), written by
+Pillow (11.3 or later). They show the same as Q16.Q16 and Q16A.Q16.
 
 Degas: D1.PI1 (low resolution), D1C.PC1 (compressed), D2C.PC2 (compressed
 medium resolution, shown with doubled lines), D4.PI4 (320 x 240, 256
@@ -154,6 +157,8 @@ reduce(big, 5, 6, 5).save(os.path.join(d, "TBIG.PNG"))
 bigpal = big.quantize(256, dither=Image.Dither.NONE)
 bigpal.save(os.path.join(d, "GBIG.GIF"), interlace=True)
 reduce(bigpal.convert("RGB"), 6, 6, 6).save(os.path.join(d, "GBIG.PNG"))
+big.save(os.path.join(d, "QBIG.QOI"))
+reduce(big, 5, 6, 5).save(os.path.join(d, "QBIG.PNG"))
 
 for n in ("G87", "GINT", "G89"):
     data = open(os.path.join(d, n + ".GIF"), "rb").read()
@@ -370,31 +375,37 @@ rgb565 = b"".join(struct.pack(">H", (r >> 3) << 11 | (g >> 2) << 5 | b >> 3) for
                   zip(*[iter(im.tobytes())] * 3))
 save("TRU.TRU", (b"Indy" + struct.pack(">HH", W, H)).ljust(256, b"\0") + rgb565, reduce(im, 5, 6, 5))
 
-# Q16
+# Q16 and QOI. The picture with alpha has a gradient from transparent
+# (left) to opaque (right) and a transparent hole. Shower blends against
+# black: c * (alpha + 1) >> 8 for each RGB565 component (alpha 0 is black,
+# 255 unchanged).
+alpha = Image.new("L", (W, H))
+alpha.putdata([min(255, x * 256 // W) if not (150 < x < 200 and 60 < y < 120) else 0
+               for y in range(H) for x in range(W)])
+rgba = im.copy()
+rgba.putalpha(alpha)
+exp = []
+for (r, g, b), a in zip(zip(*[iter(im.tobytes())] * 3), alpha.tobytes()):
+    c = [r >> 3, g >> 2, b >> 3]
+    if a != 255:
+        c = [0, 0, 0] if a == 0 else [v * (a + 1) >> 8 for v in c]
+    exp.append(((c[0] << 3) | (c[0] >> 2), (c[1] << 2) | (c[1] >> 4), (c[2] << 3) | (c[2] >> 2)))
+blended = Image.new("RGB", (W, H))
+blended.putdata(exp)
+
+im.save(os.path.join(d, "QOI.QOI"))
+reduce(im, 5, 6, 5).save(os.path.join(d, "QOI.PNG"))
+rgba.save(os.path.join(d, "QOIA.QOI"))
+blended.save(os.path.join(d, "QOIA.PNG"))
+
 if len(sys.argv) > 2:
     im.save(os.path.join(d, "Q16_SRC.PNG"))
     subprocess.run([sys.argv[2], os.path.join(d, "Q16_SRC.PNG")], check=True, stdout=subprocess.DEVNULL)
     os.replace(os.path.join(d, "Q16_SRC.q16"), os.path.join(d, "Q16.Q16"))
     os.remove(os.path.join(d, "Q16_SRC.PNG"))
     reduce(im, 5, 6, 5).save(os.path.join(d, "Q16.PNG"))
-    # With alpha: a gradient from transparent (left) to opaque (right) and a
-    # transparent hole. Shower blends against black: c * (alpha + 1) >> 8
-    # for each RGB565 component (alpha 0 is black, 255 unchanged).
-    alpha = Image.new("L", (W, H))
-    alpha.putdata([min(255, x * 256 // W) if not (150 < x < 200 and 60 < y < 120) else 0
-                   for y in range(H) for x in range(W)])
-    rgba = im.copy()
-    rgba.putalpha(alpha)
     rgba.save(os.path.join(d, "Q16A_SRC.PNG"))
     subprocess.run([sys.argv[2], os.path.join(d, "Q16A_SRC.PNG")], check=True, stdout=subprocess.DEVNULL)
     os.replace(os.path.join(d, "Q16A_SRC.q16"), os.path.join(d, "Q16A.Q16"))
     os.remove(os.path.join(d, "Q16A_SRC.PNG"))
-    exp = []
-    for (r, g, b), a in zip(zip(*[iter(im.tobytes())] * 3), alpha.tobytes()):
-        c = [r >> 3, g >> 2, b >> 3]
-        if a != 255:
-            c = [0, 0, 0] if a == 0 else [v * (a + 1) >> 8 for v in c]
-        exp.append(((c[0] << 3) | (c[0] >> 2), (c[1] << 2) | (c[1] >> 4), (c[2] << 3) | (c[2] >> 2)))
-    e = Image.new("RGB", (W, H))
-    e.putdata(exp)
-    e.save(os.path.join(d, "Q16A.PNG"))
+    blended.save(os.path.join(d, "Q16A.PNG"))

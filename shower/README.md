@@ -12,7 +12,7 @@ disassembling SHOWER.TTP 1.1 (from
 in Devpac 3 dialect. That disassembly re-assembled to a byte-identical
 SHOWER.TTP and is the first commit of `shower.s`.
 
-Version 1.2 adds support for Q16 pictures (`.Q16`):
+Version 1.2 adds support for Q16 and QOI pictures (`.Q16`, `.QOI`):
 
 * The format table has a new entry with a header parser (`q16_header`) and a
   loader (`q16_load`), following the same pattern as the Targa support.
@@ -22,6 +22,12 @@ Version 1.2 adds support for Q16 pictures (`.Q16`):
   picture, setting up the table would take longer than it saves (see
   [../bench](../bench/README.md#static-table-or-hash-formula)).
 * Pictures with alpha are blended against black.
+* QOI ([qoiformat.org](https://qoiformat.org/)) has its own header parser
+  (`qoi_header`) and loader (`qoi_load`). `qoi_dec()` in `qoidec.s` decodes
+  the picture into RGB565, blended against black in the same way as Q16, and
+  the Q16 code copies it to the screen. The decoder follows the reference
+  decoder `qoi.h`, and fills the rest of a truncated picture with its last
+  pixel.
 
 It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
 
@@ -96,21 +102,21 @@ Devpac 3 should also be able to assemble it, but that hasn't been tested.
 ## Testing
 
 Tested in Hatari 2.4.1 (Falcon, 68030, EmuTOS 1.3) on VGA and RGB monitors
-with Q16 pictures with and without alpha.
+with Q16 and QOI pictures with and without alpha.
 
 `test/regress.py` is a regression test: it shows each picture made by
 `test/mkimages.py` (Targa in 16/24/32 bits, uncompressed and RLE, both
 origins; GIF87a, interlaced and GIF89a; BMP bottom-up and top-down; Degas
 PI1, PC1, PC2, PI4 and PI5; GEM IMG with 1 and 4 planes, with and without an
-XIMG palette, using all IMG item types; POV raw; IndyPaint; Q16 with and
-without alpha; odd sizes
+XIMG palette, using all IMG item types; POV raw; IndyPaint; Q16 and QOI
+with and without alpha; odd sizes
 and pictures larger than the screen) in Hatari on a VGA monitor and
 compares the screen pixel by pixel with the expected picture:
 
     python3 test/mkimages.py pics path/to/gen_q16
     EMUTOS=etos1024k.img python3 test/regress.py SHOWER.TTP pics results
 
-Version 1.2 passes all 32 pictures. Before the fixes, all Targa and BMP
+Version 1.2 passes all 35 pictures. Before the fixes, all Targa and BMP
 pictures, the interlaced GIF, the GIF89a picture, the PI5 picture, the IMG
 without a palette and the POV raw and IndyPaint pictures failed.
 
@@ -126,4 +132,4 @@ and `regress.py` are the regression test.
 ## Known issues
 
 * 32-bit Targa pictures are shown without their alpha channel, unlike Q16
-  pictures, which are blended against black.
+  and QOI pictures, which are blended against black.

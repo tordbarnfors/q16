@@ -89,12 +89,12 @@ alpha (Q16 time includes decoding the alpha channel).
 
 | Image | Q16 asm | Q16 asmT | Q16 C | Q16 CT | PNG libpng | PNG stb | JPEG q90 turbo | JPEG q90 turbo565 | JPEG q90 stb | JPEG q75 turbo | JPEG q75 turbo565 | JPEG q75 stb |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| GUI | 135 ms | 132 ms | 246 ms | 242 ms | 4380 ms | 3525 ms | 9025 ms | 8080 ms | 16270 ms | 8665 ms | 7830 ms | 15450 ms |
-| K01 | 580 ms | 502 ms | 1068 ms | 920 ms | 12560 ms | 19395 ms | 15935 ms | 11840 ms | 20670 ms | 13650 ms | 10530 ms | 17845 ms |
-| K03 | 466 ms | 410 ms | 873 ms | 748 ms | 9790 ms | 14215 ms | 13270 ms | 10095 ms | 17155 ms | 11340 ms | 9085 ms | 15625 ms |
-| K15 | 549 ms | 464 ms | 1052 ms | 873 ms | 10100 ms | 15495 ms | 14395 ms | 10780 ms | 18215 ms | 12325 ms | 9665 ms | 16320 ms |
-| K23 | 585 ms | 480 ms | 1175 ms | 933 ms | 9640 ms | 13280 ms | 14245 ms | 10625 ms | 17605 ms | 12340 ms | 9530 ms | 15705 ms |
-| SPRITE | 79.8 ms | 76.5 ms | 123 ms | 118 ms | 1822 ms | 1988 ms | - | - | - | - | - | - |
+| GUI | 135 ms | 132 ms | 246 ms | 242 ms | 4385 ms | 3525 ms | 9010 ms | 7975 ms | 16245 ms | 8665 ms | 7730 ms | 15405 ms |
+| K01 | 580 ms | 501 ms | 982 ms | 890 ms | 12665 ms | 19380 ms | 15975 ms | 11760 ms | 20685 ms | 13690 ms | 10445 ms | 17835 ms |
+| K03 | 466 ms | 410 ms | 792 ms | 720 ms | 9855 ms | 14220 ms | 13265 ms | 9975 ms | 17160 ms | 11335 ms | 8960 ms | 15585 ms |
+| K15 | 549 ms | 464 ms | 938 ms | 833 ms | 10185 ms | 15495 ms | 14425 ms | 10680 ms | 18230 ms | 12315 ms | 9530 ms | 16275 ms |
+| K23 | 585 ms | 480 ms | 1005 ms | 875 ms | 9705 ms | 13305 ms | 14260 ms | 10485 ms | 17600 ms | 12335 ms | 9400 ms | 15695 ms |
+| SPRITE | 79.8 ms | 76.5 ms | 121 ms | 117 ms | 1825 ms | 1985 ms | - | - | - | - | - | - |
 
 ### Encoding time
 
@@ -102,27 +102,28 @@ Encoding the pixels decoded from NAME.PNG (RGB565). JPEG encodes them as 8-bit R
 
 | Image | Q16 asm | Q16 asmT | Q16 C | Q16 CT | PNG libpng | JPEG q90 turbo | JPEG q75 turbo |
 |---|---|---|---|---|---|---|---|
-| GUI | 429 ms | 406 ms | 722 ms | 672 ms | 26510 ms | 17380 ms | 17190 ms |
-| K01 | 1675 ms | 1342 ms | 3790 ms | 3405 ms | 160890 ms | 18970 ms | 17975 ms |
-| K03 | 1205 ms | 1005 ms | 2805 ms | 2500 ms | 135490 ms | 17685 ms | 17135 ms |
-| K15 | 1598 ms | 1315 ms | 3440 ms | 3020 ms | 148635 ms | 17970 ms | 17265 ms |
-| K23 | 1662 ms | 1405 ms | 3435 ms | 3010 ms | 145720 ms | 17745 ms | 17125 ms |
-| SPRITE | 246 ms | 233 ms | 387 ms | 361 ms | 14465 ms | - | - |
+| GUI | 428 ms | 401 ms | 722 ms | 705 ms | 27035 ms | 17325 ms | 17125 ms |
+| K01 | 1678 ms | 1310 ms | 3660 ms | 3750 ms | 161235 ms | 18990 ms | 17980 ms |
+| K03 | 1208 ms | 993 ms | 2655 ms | 2710 ms | 135625 ms | 17710 ms | 17145 ms |
+| K15 | 1602 ms | 1295 ms | 3320 ms | 3255 ms | 148760 ms | 17990 ms | 17290 ms |
+| K23 | 1668 ms | 1392 ms | 3315 ms | 3210 ms | 145895 ms | 17770 ms | 17145 ms |
+| SPRITE | 247 ms | 231 ms | 387 ms | 372 ms | 14445 ms | - | - |
 
 ### Summary
 
 * The asm Q16 decoder is **16-26 times faster than the fastest PNG decoder**
-  for the same pixels (20-27 times with the static table), and **16-58 times
+  for the same pixels (20-27 times with the static table), and **16-57 times
   faster than the fastest JPEG decoding** (libjpeg-turbo with fast settings
   directly to RGB565, which is also what a Falcon viewer would use). A
   640x480 photo takes about half a second as Q16, against 10-13 seconds as
   PNG or 9-12 seconds as JPEG.
-* The asm decoder is 1.5-2.0 times faster than q16_lib.c compiled with GCC.
-* Encoding with the asm encoder is **59-112 times faster than libpng** and
+* The asm decoder is 1.5-1.8 times faster than q16_lib.c compiled with GCC.
+* Encoding with the asm encoder is **58-112 times faster than libpng** and
   **10-40 times faster than libjpeg-turbo**. A 640x480 photo takes 1.2-1.7
   seconds as Q16 (1.0-1.4 with the static table), against 2.2-2.7 minutes as
-  PNG and about 18 seconds as JPEG. The asm encoder is 1.6-2.5 times faster
-  than q16_lib.c and produces identical files.
+  PNG and about 18 seconds as JPEG. The asm encoder is 1.6-2.2 times faster
+  than q16_lib.c (1.6-2.9 times with the static table) and produces identical
+  files.
 * Q16 files are about the same size as PNG files with the same RGB565 pixels
   for photos (-9% to +17%), but larger for the GUI screen (+32%) and the
   sprite sheet (+84%), where PNG's deflate finds long repeated patterns.
@@ -157,24 +158,24 @@ from K01 and GUI):
 
 | Picture | Pixels | Hashed | `q_decPxT` | `q_decPix` | Per hashed pixel | `..._decompressPixelsT` | `..._decompressPixels` | Per hashed pixel |
 |---|---|---|---|---|---|---|---|---|
-| GUI | 307200 | 1.2% | 131.56 ms | 134.66 ms (+2.4%) | 0.84 µs | 241.66 ms | 246.11 ms (+1.8%) | 1.21 µs |
-| SPRITE | 76800 | 5.6% | 76.48 ms | 79.80 ms (+4.3%) | 0.77 µs | 117.50 ms | 122.94 ms (+4.6%) | 1.26 µs |
-| K03 | 307200 | 22.9% | 410.00 ms | 466.00 ms (+13.7%) | 0.80 µs | 748.33 ms | 873.33 ms (+16.7%) | 1.78 µs |
-| K01 | 307200 | 33.6% | 502.50 ms | 580.00 ms (+15.4%) | 0.75 µs | 920.00 ms | 1067.50 ms (+16.0%) | 1.43 µs |
-| K15 | 307200 | 35.8% | 464.00 ms | 548.75 ms (+18.3%) | 0.77 µs | 873.33 ms | 1052.50 ms (+20.5%) | 1.63 µs |
-| K23 | 307200 | 43.3% | 480.00 ms | 585.00 ms (+21.9%) | 0.79 µs | 933.33 ms | 1175.00 ms (+25.9%) | 1.82 µs |
-| Photo 32x32 | 1024 | 40.0% | 2.54 ms | 2.89 ms (+13.8%) | 0.85 µs | 3.44 ms | 4.00 ms (+16.3%) | 1.37 µs |
-| Photo 64x64 | 4096 | 38.1% | 8.09 ms | 9.30 ms (+15.0%) | 0.78 µs | 13.07 ms | 15.34 ms (+17.4%) | 1.45 µs |
-| Photo 128x128 | 16384 | 34.4% | 28.92 ms | 33.19 ms (+14.8%) | 0.76 µs | 50.62 ms | 58.71 ms (+16.0%) | 1.44 µs |
-| Photo 256x256 | 65536 | 32.9% | 109.73 ms | 125.62 ms (+14.5%) | 0.74 µs | 198.18 ms | 228.33 ms (+15.2%) | 1.40 µs |
+| GUI | 307200 | 1.2% | 131.56 ms | 134.66 ms (+2.4%) | 0.84 µs | 241.66 ms | 245.55 ms (+1.6%) | 1.06 µs |
+| SPRITE | 76800 | 5.6% | 76.48 ms | 79.80 ms (+4.3%) | 0.77 µs | 116.66 ms | 120.58 ms (+3.4%) | 0.91 µs |
+| K03 | 307200 | 22.9% | 410.00 ms | 466.00 ms (+13.7%) | 0.80 µs | 720.00 ms | 791.66 ms (+10.0%) | 1.02 µs |
+| K01 | 307200 | 33.6% | 501.25 ms | 580.00 ms (+15.7%) | 0.76 µs | 890.00 ms | 981.66 ms (+10.3%) | 0.89 µs |
+| K15 | 307200 | 35.8% | 464.00 ms | 548.75 ms (+18.3%) | 0.77 µs | 833.33 ms | 938.33 ms (+12.6%) | 0.95 µs |
+| K23 | 307200 | 43.3% | 480.00 ms | 585.00 ms (+21.9%) | 0.79 µs | 875.00 ms | 1005.00 ms (+14.9%) | 0.98 µs |
+| Photo 32x32 | 1024 | 40.0% | 2.53 ms | 2.89 ms (+14.2%) | 0.88 µs | 3.33 ms | 3.68 ms (+10.5%) | 0.85 µs |
+| Photo 64x64 | 4096 | 38.1% | 8.06 ms | 9.30 ms (+15.4%) | 0.79 µs | 12.61 ms | 13.98 ms (+10.9%) | 0.88 µs |
+| Photo 128x128 | 16384 | 34.4% | 28.85 ms | 33.19 ms (+15.0%) | 0.77 µs | 48.90 ms | 53.81 ms (+10.0%) | 0.87 µs |
+| Photo 256x256 | 65536 | 32.9% | 109.47 ms | 125.62 ms (+14.8%) | 0.75 µs | 191.81 ms | 211.00 ms (+10.0%) | 0.89 µs |
 | GUI 32x32 | 1024 | 5.0% | 0.99 ms | 1.05 ms (+6.1%) | 1.17 µs | 1.24 ms | 1.28 ms (+3.2%) | 0.78 µs |
-| GUI 64x64 | 4096 | 4.2% | 3.35 ms | 3.53 ms (+5.4%) | 1.05 µs | 4.60 ms | 4.76 ms (+3.5%) | 0.93 µs |
-| GUI 128x128 | 16384 | 3.7% | 12.04 ms | 12.57 ms (+4.4%) | 0.87 µs | 19.32 ms | 19.90 ms (+3.0%) | 0.96 µs |
-| GUI 256x256 | 65536 | 2.7% | 35.17 ms | 36.54 ms (+3.9%) | 0.77 µs | 62.27 ms | 63.90 ms (+2.6%) | 0.92 µs |
+| GUI 64x64 | 4096 | 4.2% | 3.35 ms | 3.53 ms (+5.4%) | 1.05 µs | 4.59 ms | 4.71 ms (+2.6%) | 0.70 µs |
+| GUI 128x128 | 16384 | 3.7% | 12.04 ms | 12.57 ms (+4.4%) | 0.87 µs | 19.27 ms | 19.80 ms (+2.8%) | 0.87 µs |
+| GUI 256x256 | 65536 | 2.7% | 35.08 ms | 36.54 ms (+4.2%) | 0.83 µs | 62.12 ms | 63.59 ms (+2.4%) | 0.83 µs |
 
 "Hashed" is the share of pixels that are literals or deltas. The formula
 costs about **0.77 µs (12 cycles) per hashed pixel in asm** and about
-**1.5 µs in C** (1.4-1.8 µs for the photos; the GUI pictures have so few
+**0.9 µs in C** (0.85-1.02 µs for the photos; the GUI pictures have so few
 hashed pixels that their difference is close to the timer resolution), the
 same for pictures of all sizes. So, with h hashed pixels:
 
@@ -182,14 +183,14 @@ same for pictures of all sizes. So, with h hashed pixels:
     q_decPix:                 t + 0.77 µs x h
 
 **Break-even at about 140 000 hashed pixels in asm** (107.25 ms / 0.77 µs)
-and about 100 000 in C (148.75 ms / 1.5 µs). In pixels that is the number
+and about 165 000 in C (148.75 ms / 0.9 µs). In pixels that is the number
 of hashed pixels divided by the hashed share:
 
 * Photos (23-43% hashed): 320 000 - 600 000 pixels in asm, about 410 000 for
   a typical photo (34% hashed), which is about 640x640. The 640x480 photos
   decode 2-52 ms faster with `q_decPix()` than with table setup +
   `q_decPxT()`; K23, with the most hashed pixels, is close to even. In C the
-  break-even is lower, about 300 000 pixels for a typical photo.
+  break-even is about 490 000 pixels for a typical photo.
 * Graphics, GUIs, sprites (1-6% hashed): 2.5 - 12 million pixels in asm, far
   more than fits in a Falcon's memory, so the default functions are always
   faster.
@@ -199,21 +200,26 @@ of hashed pixels divided by the hashed share:
 The encoders need the index for every pixel that isn't a repeat, and for
 the pixel after each literal. Encode time per picture:
 
-| Picture | `q_encPxT` | `q_encPix` | Per pixel | `..._compressPixelsT` | `..._compressPixels` | Per pixel |
-|---|---|---|---|---|---|---|
-| GUI | 406 ms | 429 ms (+5.7%) | 0.08 µs | 672 ms | 722 ms (+7.4%) | 0.16 µs |
-| SPRITE | 233 ms | 246 ms (+5.5%) | 0.17 µs | 361 ms | 387 ms (+7.2%) | 0.34 µs |
-| K03 | 1005 ms | 1205 ms (+19.9%) | 0.65 µs | 2500 ms | 2805 ms (+12.2%) | 0.99 µs |
-| K01 | 1342 ms | 1675 ms (+24.8%) | 1.08 µs | 3405 ms | 3790 ms (+11.3%) | 1.25 µs |
-| K15 | 1315 ms | 1598 ms (+21.5%) | 0.92 µs | 3020 ms | 3440 ms (+13.9%) | 1.37 µs |
-| K23 | 1405 ms | 1662 ms (+18.3%) | 0.84 µs | 3010 ms | 3435 ms (+14.1%) | 1.38 µs |
+| Picture | `q_encPxT` | `q_encPix` | Per pixel | `..._compressPixelsT` | `..._compressPixels` |
+|---|---|---|---|---|---|
+| GUI | 401 ms | 428 ms (+6.7%) | 0.09 µs | 705 ms | 722 ms (+2.4%) |
+| SPRITE | 231 ms | 247 ms (+6.7%) | 0.20 µs | 372 ms | 387 ms (+4.0%) |
+| K03 | 993 ms | 1208 ms (+21.6%) | 0.70 µs | 2710 ms | 2655 ms (-2.0%) |
+| K01 | 1310 ms | 1678 ms (+28.1%) | 1.20 µs | 3750 ms | 3660 ms (-2.4%) |
+| K15 | 1295 ms | 1602 ms (+23.7%) | 1.00 µs | 3255 ms | 3320 ms (+2.0%) |
+| K23 | 1392 ms | 1668 ms (+19.7%) | 0.90 µs | 3210 ms | 3315 ms (+3.3%) |
 
-For photos the formula costs 0.65-1.08 µs per pixel in asm and 1.0-1.4 µs
-in C, so the table pays off from about 100 000 - 165 000 pixels (asm) or
-110 000 - 150 000 pixels (C), even when it's set up for just one picture: a
-640x480 photo encodes 8-13% faster with table setup + `q_encPxT()` than with
-`q_encPix()`. For graphics, GUIs and sprites (0.08-0.34 µs per pixel) the
-break-even is 0.4 - 1.4 million pixels, so the default functions are faster.
+In asm the formula costs 0.70-1.20 µs per pixel for photos, so the table
+pays off from about 90 000 - 155 000 pixels, even when it's set up for just
+one picture: a 640x480 photo encodes 9-16% faster with table setup +
+`q_encPxT()` than with `q_encPix()`. For graphics, GUIs and sprites
+(0.09-0.20 µs per pixel) the break-even is 0.5 - 1.2 million pixels, so
+`q_encPix()` is faster.
+
+In C the two encoders are within a few percent of each other, less than
+the variation caused by code placement (see [Caveats](#caveats)): with
+unchanged encoder code, an earlier build measured 3405 ms with the table and
+3790 ms without for K01.
 
 #### Which to use
 
@@ -221,10 +227,11 @@ The default functions need no memory and no setup, and are the better choice
 when one picture is decoded at a time, like in Shower and the viewer
 plugins. The table pays off when it is set up once and used for many
 pictures: then the T functions win as soon as the pictures together have
-more than about 140 000 hashed pixels (decoding) or a photo of about 100 000
-pixels has been encoded, and after that they are 2-26% faster per picture
-when decoding and 5-25% when encoding. A program that saves 640x480 photos
-gains a little from the table even for a single picture.
+more than about 140 000 hashed pixels (decoding) or, in asm, a photo of
+about 90 000 pixels has been encoded, and after that they are 2-22% faster
+per picture when decoding and 7-28% when encoding in asm. A program that
+saves 640x480 photos with the asm encoder gains a little from the table even
+for a single picture.
 
 ## PC results
 
@@ -324,5 +331,9 @@ both and prints them as codec `q16_lib` and `q16_lib T`.
   the times.
 * JPEG is lossy and much smaller. Q16 and the benchmarked PNG files hold
   exactly the same pixels.
+* Code placement matters on the 68030, probably through its 256 byte
+  instruction cache: the same compiled function can measure up to about 10%
+  faster or slower in another build, when other code before it has changed
+  size. The asm routines are affected less than the C ones.
 * The Falcon's DSP can be used for JPEG decoding (as done by some Falcon
   image viewers). That isn't covered here.

@@ -25,7 +25,7 @@ The table versions take the table as an extra last argument. It's set up by
 table takes 107 ms on a Falcon, so they only pay off when the table is
 reused, when decoding a picture with more than about 140,000 literal and
 delta pixels (a photo of about 640x640) or when encoding a photo of more
-than about 100,000-165,000 pixels, see
+than about 90,000-155,000 pixels, see
 [../bench](../bench/README.md#static-table-or-hash-formula). Use either the
 default files or the table files, not both: each contains its own copy of
 `q_vers()`, `q_rdHdr()` and `q_decAlp()` (decoders) or `q_wrtHdr()` and
@@ -47,8 +47,8 @@ stream in one call, take the number of pixels instead of an instance table
 and return 0 or -1 instead of a struct. The compress functions also handle a
 complete stream in one call and need no instance table.
 
-On an emulated Falcon the asm decoder is 1.5-2.0 times and the asm encoder
-1.6-2.5 times faster than q16_lib.c compiled with GCC, see
+On an emulated Falcon the asm decoder is 1.5-1.8 times and the asm encoder
+1.6-2.2 times faster than q16_lib.c compiled with GCC, see
 [../bench](../bench/README.md).
 
 ## Assembling

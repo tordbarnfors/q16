@@ -92,8 +92,10 @@ p = (prev + dr × 2048 + dg × 32 + db) mod 65536
 ```
 
 The new pixel is output, stored in the palette and becomes `prev`. Encoders
-only write DELTA when no channel wraps around, so computing the channels
-separately gives the same result.
+only write DELTA when no channel wraps around. Then adding the signed sum in
+one go equals adding to each channel separately: a borrow from a negative
+field is cancelled by the same sum's contribution to the field above, since
+(R + dr) × 2048 + (G + dg) × 32 + (B + db) = prev + dr × 2048 + dg × 32 + db.
 
 Byte 0xD2 (DELTA with all differences 0) is reserved and never written by
 encoders, which use REPEAT instead. Decoders may treat it as an error or as a

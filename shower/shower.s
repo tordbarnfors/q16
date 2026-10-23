@@ -1227,6 +1227,8 @@ mouse_handler:
 ;	Finds the darkest and the brightest colour of the palette.
 
 find_border_colours:
+	cmpi.w	#16,(screen_planes).l				; v1.2: true colour has no
+	beq.s	.done								; palette, the border is black.
 	lea		palette(pc),a0
 	move.w	#$300,d2
 	moveq	#0,d1
@@ -1259,6 +1261,7 @@ find_border_colours:
 	dbra	d5,.colour
 	move.w	d4,(darkest_colour).l
 	move.w	d7,(brightest_colour).l
+.done:
 	rts
 
 ;	Fills the screen around the picture with the border colour, for 8, 4, 2
@@ -3799,9 +3802,9 @@ put_320x200:
 ;____ Q16 support, added in v1.2 ____________________________________________
 ;
 ;	Q16 is RGB565 with optional 8-bit alpha, see q16_lib.h. The picture is
-;	decoded with q_decPix and q_decAlp (q16dec.s) into temporary buffers
-;	and copied to the screen.
-;	Alpha is blended against black.
+;	decoded with q_decPix (q16dec.s) straight into the screen memory, so no
+;	buffer of its size is needed. The alpha channel is decoded with
+;	q_decAlp into a buffer and blended against black.
 
 ;	Header parser. a0 = format table entry.
 
@@ -3862,15 +3865,8 @@ q16_load:
 	mulu.l	d6,d0
 	move.l	d0,(q16_pixels_count).l
 
-	move.l	(q16_pixels_count).l,d0				; Pixels
-	add.l	d0,d0
-	move.l	d0,-(a7)
-	move.w	#72,-(a7)							; Malloc
-	trap	#1
-	addq.l	#6,a7
-	move.l	d0,(q16_pixels).l
-	beq.w	.fail
-
+	move.l	picture_start(pc),(q16_pixels).l	; Pixels: decoded into the screen,
+												; see q16_show.
 	tst.l	(q16_alpha_bytes).l					; Alpha
 	beq.s	.no_alpha
 	move.l	(q16_pixels_count).l,-(a7)
@@ -3918,54 +3914,73 @@ q16_load:
 	bsr.s	q16_free
 	bra.w	exit
 
-;	Copies the decoded pixels (q16_pixels) to the screen and frees the
-;	temporary buffers. Also used for QOI. Destroys d0-d7/a0-a3.
+;	The pixels are decoded straight into the screen, as one block from
+;	picture_start. Moves each line to its place on the screen, last line
+;	first, so no line is overwritten before it has been moved, clears the
+;	padding up to 16 pixels and frees the alpha buffer. Nothing has to be
+;	moved when the picture is as wide as the screen. Also used for QOI.
+;	Destroys d0-d7/a0-a3.
 
 q16_show:
 	moveq	#0,d7
 	move.w	picture_width(pc),d7				; d7 = width
-	movea.l	(q16_pixels).l,a0
-	movea.l	picture_start(pc),a1
 	movea.l	format(pc),a2
-	move.w	8(a2),d3							; Height
+	moveq	#0,d6
+	move.w	8(a2),d6							; d6 = height
 	moveq	#0,d1
-	move.w	screen_width(pc),d1					; Screen width
+	move.w	screen_width(pc),d1
 	add.l	d1,d1								; d1 = bytes per screen line
+	move.l	d7,d2
+	add.l	d2,d2								; d2 = bytes per picture line
+	cmp.l	d1,d2
+	beq.s	q16_free							; Already in place.
 	move.w	6(a2),d5
 	sub.w	d7,d5								; d5 = padding up to 16 pixels
-	subq.w	#1,d7
-	subq.w	#1,d3
+	movea.l	picture_start(pc),a0
+	movea.l	a0,a1
+	move.l	d2,d0
+	mulu.l	d6,d0
+	adda.l	d0,a0								; a0 = end of the decoded pixels
+	move.l	d1,d0
+	subq.l	#1,d6
+	mulu.l	d6,d0
+	add.l	d2,d0
+	adda.l	d0,a1								; a1 = end of the last screen line
+	move.w	d6,d3								; d3 = lines - 1
 .line:
-	movea.l	a1,a3
-	move.w	d7,d2
-.pixel:
-	move.w	(a0)+,(a3)+
-	dbra	d2,.pixel
-	move.w	d5,d2
+	movea.l	a1,a3								; Padding
+	move.w	d5,d4
 	bra.s	.pad_test
 .pad:
 	clr.w	(a3)+
 .pad_test:
-	dbra	d2,.pad
-	adda.l	d1,a1
+	dbra	d4,.pad
+	btst	#0,d7								; Move the line, backwards as it
+	beq.s	.longs								; can overlap its new place.
+	move.w	-(a0),-(a1)
+.longs:
+	move.w	d7,d4
+	lsr.w	#1,d4
+	bra.s	.long_test
+.long:
+	move.l	-(a0),-(a1)
+.long_test:
+	dbra	d4,.long
+	suba.l	d1,a1
+	adda.l	d2,a1								; a1 = end of the line above
 	dbra	d3,.line
 
-;	Frees the temporary buffers.
+;	Frees the alpha buffer.
 
 q16_free:
-	lea		(q16_pixels).l,a3
-	moveq	#1,d3
-.loop:
-	move.l	(a3),d0
-	beq.s	.next
-	clr.l	(a3)
+	move.l	(q16_alpha).l,d0
+	beq.s	.done
+	clr.l	(q16_alpha).l
 	move.l	d0,-(a7)
 	move.w	#73,-(a7)							; Mfree
 	trap	#1
 	addq.l	#6,a7
-.next:
-	addq.l	#4,a3
-	dbra	d3,.loop
+.done:
 	rts
 
 ;	Blends the pixels against black using the alpha channel.
@@ -4021,7 +4036,7 @@ q16_blend:
 ;
 ;	QOI (https://qoiformat.org/) is 24-bit RGB with optional 8-bit alpha.
 ;	qoi_dec (qoidec.s) decodes the picture into RGB565, blended against
-;	black like Q16, and q16_show copies it to the screen.
+;	black like Q16, straight into the screen memory.
 
 ;	Header parser. a0 = format table entry.
 
@@ -4066,14 +4081,7 @@ qoi_load:
 	move.w	8(a2),d1
 	mulu.l	d1,d0
 	move.l	d0,(q16_pixels_count).l
-
-	add.l	d0,d0								; Pixels
-	move.l	d0,-(a7)
-	move.w	#72,-(a7)							; Malloc
-	trap	#1
-	addq.l	#6,a7
-	move.l	d0,(q16_pixels).l
-	beq.s	.fail
+	move.l	picture_start(pc),(q16_pixels).l	; Decoded into the screen.
 
 	move.l	(q16_pixels_count).l,-(a7)
 	movea.l	file_buffer(pc),a3
@@ -4089,10 +4097,6 @@ qoi_load:
 	bsr.w	q16_show
 	movem.l	(a7)+,d2-d7/a2-a6
 	rts
-
-.fail:
-	bsr.w	q16_free
-	bra.w	exit
 
 	include	"qoidec.s"							; qoi_dec
 
@@ -4582,8 +4586,8 @@ q16_alpha_bytes:
 	ds.b	4
 q16_pixels_count:
 	ds.b	4
-q16_pixels:										; q16_pixels and q16_alpha must
-	ds.b	4									; stay together, see q16_free.
+q16_pixels:										; Decoded pixels: picture_start
+	ds.b	4
 q16_alpha:
 	ds.b	4
 	even

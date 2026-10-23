@@ -16,16 +16,19 @@ Version 1.2 adds support for Q16 and QOI pictures (`.Q16`, `.QOI`):
 
 * The format table has a new entry with a header parser (`q16_header`) and a
   loader (`q16_load`), following the same pattern as the Targa support.
-* The picture is decoded by `q_decPix()` and `q_decAlp()` from
-  `m68k/q16dec.s`, which is included into the source, into temporary buffers
-  and copied to the screen. `q_decPix()` needs no 64 KB table: for one
-  picture, setting up the table would take longer than it saves (see
+* The picture is decoded by `q_decPix()` from `m68k/q16dec.s`, which is
+  included into the source, straight into the screen memory: as one block,
+  after which the lines are moved to their places on the screen, last line
+  first (`q16_show`), unless the picture is as wide as the screen. So no
+  buffer of the picture's size is needed. `q_decPix()` needs no 64 KB table:
+  for one picture, setting up the table would take longer than it saves (see
   [../bench](../bench/README.md#static-table-or-hash-formula)).
-* Pictures with alpha are blended against black.
+* The alpha channel is decoded by `q_decAlp()` into a buffer, and pictures
+  with alpha are blended against black.
 * QOI ([qoiformat.org](https://qoiformat.org/)) has its own header parser
   (`qoi_header`) and loader (`qoi_load`). `qoi_dec()` in `qoidec.s` decodes
-  the picture into RGB565, blended against black in the same way as Q16, and
-  the Q16 code copies it to the screen. The decoder follows the reference
+  the picture into RGB565, blended against black in the same way as Q16,
+  straight into the screen memory like Q16. The decoder follows the reference
   decoder `qoi.h`, and fills the rest of a truncated picture with its last
   pixel.
 
@@ -73,6 +76,11 @@ It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
   are now shown through two view buffers (`set_view`, `update_view`,
   `copy_view`): the visible part is copied into one when the scroll
   position changes, then shown from the next VBL.
+* `find_border_colours` looked for the darkest and brightest of the
+  `1 << planes` palette colours, so for true colour pictures it looped 65536
+  times (about 0.3 seconds on a Falcon), reading far past the palette, for a
+  result that isn't used: true colour borders are black. It now returns at
+  once for them.
 
 ## Labels
 
@@ -125,7 +133,7 @@ compares the screen pixel by pixel with the expected picture:
     python3 test/mkimages.py pics path/to/gen_q16
     EMUTOS=etos1024k.img python3 test/regress.py SHOWER.TTP pics results
 
-Version 1.2 passes all 36 pictures. Before the fixes, all Targa and BMP
+Version 1.2 passes all 37 pictures. Before the fixes, all Targa and BMP
 pictures, the interlaced GIF, the GIF89a picture, the PI5 picture, the IMG
 without a palette and the POV raw and IndyPaint pictures failed.
 

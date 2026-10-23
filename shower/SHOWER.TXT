@@ -359,3 +359,8 @@ Version 1.2 (2026):
 	   1328 or 1648 pixels, were garbled, as the Videl can't skip
 	   that much of each line. They are now copied to a separate
 	   screen when scrolled.
+
+	+ True Color pictures are shown faster: Shower no longer spends a
+	   third of a second looking for border colours in a palette that
+	   True Color pictures don't have, and Q16 and QOI pictures are
+	   decoded straight into the screen, which also needs less memory.

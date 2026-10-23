@@ -18,7 +18,9 @@ BMP: B8.BMP (256 colours, 321 x 203), B8W.BMP (320 x 203) and B8TD.BMP
 Larger than the screen (700 x 530): TBIG.TGA (24 bits, RLE, bottom-left
 origin), GBIG.GIF (interlaced) and QBIG.QOI. QBIGW.QOI (1000 x 300) is too
 wide for the Videl's line offset in true colour low resolution, so Shower
-shows it through a view buffer.
+shows it through a view buffer. QBIGO.QOI (1023 x 500, with alpha) also is,
+and as Shower decodes into the screen, its lines are moved 2 bytes apart,
+nearly onto themselves.
 
 GIF: G87.GIF (GIF87a), GINT.GIF (interlaced), G89.GIF (GIF89a with a
 graphic control and a comment extension before the image).
@@ -384,24 +386,34 @@ save("TRU.TRU", (b"Indy" + struct.pack(">HH", W, H)).ljust(256, b"\0") + rgb565,
 # (left) to opaque (right) and a transparent hole. Shower blends against
 # black: c * (alpha + 1) >> 8 for each RGB565 component (alpha 0 is black,
 # 255 unchanged).
-alpha = Image.new("L", (W, H))
-alpha.putdata([min(255, x * 256 // W) if not (150 < x < 200 and 60 < y < 120) else 0
-               for y in range(H) for x in range(W)])
-rgba = im.copy()
-rgba.putalpha(alpha)
-exp = []
-for (r, g, b), a in zip(zip(*[iter(im.tobytes())] * 3), alpha.tobytes()):
-    c = [r >> 3, g >> 2, b >> 3]
-    if a != 255:
-        c = [0, 0, 0] if a == 0 else [v * (a + 1) >> 8 for v in c]
-    exp.append(((c[0] << 3) | (c[0] >> 2), (c[1] << 2) | (c[1] >> 4), (c[2] << 3) | (c[2] >> 2)))
-blended = Image.new("RGB", (W, H))
-blended.putdata(exp)
+def with_alpha(im):
+    """Returns im with the alpha gradient and hole, and how Shower shows it."""
+    w, h = im.size
+    alpha = Image.new("L", (w, h))
+    alpha.putdata([min(255, x * 256 // w) if not (150 < x < 200 and 60 < y < 120) else 0
+                   for y in range(h) for x in range(w)])
+    rgba = im.copy()
+    rgba.putalpha(alpha)
+    exp = []
+    for (r, g, b), a in zip(zip(*[iter(im.tobytes())] * 3), alpha.tobytes()):
+        c = [r >> 3, g >> 2, b >> 3]
+        if a != 255:
+            c = [0, 0, 0] if a == 0 else [v * (a + 1) >> 8 for v in c]
+        exp.append(((c[0] << 3) | (c[0] >> 2), (c[1] << 2) | (c[1] >> 4), (c[2] << 3) | (c[2] >> 2)))
+    blended = Image.new("RGB", (w, h))
+    blended.putdata(exp)
+    return rgba, blended
+
+
+rgba, blended = with_alpha(im)
 
 im.save(os.path.join(d, "QOI.QOI"))
 reduce(im, 5, 6, 5).save(os.path.join(d, "QOI.PNG"))
 rgba.save(os.path.join(d, "QOIA.QOI"))
 blended.save(os.path.join(d, "QOIA.PNG"))
+odd_rgba, odd_blended = with_alpha(pattern(1023, 500))
+odd_rgba.save(os.path.join(d, "QBIGO.QOI"))
+odd_blended.save(os.path.join(d, "QBIGO.PNG"))
 
 if len(sys.argv) > 2:
     im.save(os.path.join(d, "Q16_SRC.PNG"))

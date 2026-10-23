@@ -352,3 +352,10 @@ Version 1.2 (2026):
 	   palette, PI5 pictures are shown completely (the lower half was
 	   missing), and POV raw and IndyPaint pictures with a width that
 	   isn't a multiple of 16 no longer lose their first 16 columns.
+
+	+ Wide pictures are shown correctly: True Color pictures wider
+	   than 816 pixels in low resolution (always used on VGA) or 1136
+	   pixels in high resolution, and 256-color pictures wider than
+	   1328 or 1648 pixels, were garbled, as the Videl can't skip
+	   that much of each line. They are now copied to a separate
+	   screen when scrolled.

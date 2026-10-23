@@ -65,6 +65,14 @@ It also fixes bugs found in version 1.1 (see the history in SHOWER.TXT):
   that isn't a multiple of 16 lost their first 16 columns to the border, as
   their header parsers didn't round the width up like the others, and the
   POV raw loader could corrupt the first pixels (an uncleared register).
+* Wide pictures were garbled: Shower scrolls by setting the Videl line
+  offset to the screen width minus the visible width, but the register has
+  only 9 bits (511 words). In true colour that broke pictures wider than 816
+  pixels in low resolution (always used on VGA) and 1136 pixels in high
+  resolution, in 256 colours wider than 1328 and 1648 pixels. Such pictures
+  are now shown through two view buffers (`set_view`, `update_view`,
+  `copy_view`): the visible part is copied into one when the scroll
+  position changes, then shown from the next VBL.
 
 ## Labels
 
@@ -97,7 +105,7 @@ builds SHOWER.TTP with [vasm](http://sun.hasenbraten.de/vasm/) in Devpac mode.
 Give the original SHOWER.TTP as a second argument to compare with it (only
 useful for the version 1.1 source).
 
-Devpac 3 should also be able to assemble it, but that hasn't been tested.
+Devpac 3.1 also assembles it.
 
 ## Testing
 
@@ -110,13 +118,14 @@ origins; GIF87a, interlaced and GIF89a; BMP bottom-up and top-down; Degas
 PI1, PC1, PC2, PI4 and PI5; GEM IMG with 1 and 4 planes, with and without an
 XIMG palette, using all IMG item types; POV raw; IndyPaint; Q16 and QOI
 with and without alpha; odd sizes
-and pictures larger than the screen) in Hatari on a VGA monitor and
+and pictures larger than the screen, one of them too wide for the Videl's
+line offset) in Hatari on a VGA monitor and
 compares the screen pixel by pixel with the expected picture:
 
     python3 test/mkimages.py pics path/to/gen_q16
     EMUTOS=etos1024k.img python3 test/regress.py SHOWER.TTP pics results
 
-Version 1.2 passes all 35 pictures. Before the fixes, all Targa and BMP
+Version 1.2 passes all 36 pictures. Before the fixes, all Targa and BMP
 pictures, the interlaced GIF, the GIF89a picture, the PI5 picture, the IMG
 without a palette and the POV raw and IndyPaint pictures failed.
 

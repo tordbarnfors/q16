@@ -16,7 +16,9 @@ BMP: B8.BMP (256 colours, 321 x 203), B8W.BMP (320 x 203) and B8TD.BMP
 (stored top-down).
 
 Larger than the screen (700 x 530): TBIG.TGA (24 bits, RLE, bottom-left
-origin), GBIG.GIF (interlaced) and QBIG.QOI.
+origin), GBIG.GIF (interlaced) and QBIG.QOI. QBIGW.QOI (1000 x 300) is too
+wide for the Videl's line offset in true colour low resolution, so Shower
+shows it through a view buffer.
 
 GIF: G87.GIF (GIF87a), GINT.GIF (interlaced), G89.GIF (GIF89a with a
 graphic control and a comment extension before the image).
@@ -159,6 +161,9 @@ bigpal.save(os.path.join(d, "GBIG.GIF"), interlace=True)
 reduce(bigpal.convert("RGB"), 6, 6, 6).save(os.path.join(d, "GBIG.PNG"))
 big.save(os.path.join(d, "QBIG.QOI"))
 reduce(big, 5, 6, 5).save(os.path.join(d, "QBIG.PNG"))
+wide = pattern(1000, 300)
+wide.save(os.path.join(d, "QBIGW.QOI"))
+reduce(wide, 5, 6, 5).save(os.path.join(d, "QBIGW.PNG"))
 
 for n in ("G87", "GINT", "G89"):
     data = open(os.path.join(d, n + ".GIF"), "rb").read()

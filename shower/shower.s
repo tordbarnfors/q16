@@ -174,6 +174,7 @@ start:
 ;	Also the error exit: loaders jump here when a picture can't be shown.
 
 exit:
+	bsr.w	view_free
 	tst.l	(file_buffer).l
 	beq.s	.free_screen
 
@@ -355,6 +356,7 @@ setup_screen:
 	move.l	($70).w,(old_vbl).l					; store vbl (vector)
 	move.l	#vbl_handler,($70).w				; set vbl.handler
 .main_loop:
+	bsr.w	update_view							; v1.2: wide pictures, see set_view
 	cmpi.b	#249,(mouse_buttons).l				; Right button
 	beq.w	.quit
 	cmpi.b	#250,(mouse_buttons).l				; Left button
@@ -526,7 +528,9 @@ toggle_border:
 .brightest:
 	move.w	brightest_colour(pc),(a0)
 .fill:
-	bra.w	fill_border
+	bsr.w	fill_border
+	move.w	#-1,(view_x).l						; Copy the view buffer again.
+	rts
 
 ;	Left mouse button: switches resolution.
 
@@ -602,9 +606,7 @@ zoom_in:
 	lsr.w	#4,d0
 	subi.w	#20,d0
 	mulu.w	screen_planes(pc),d0
-	move.w	d0,(line_offset).l
-	move.w	d0,($ffff820e).w					; write vid_lineoffset [Falcon]
-	rts
+	bra.w	set_view
 
 ;	Minus: high resolution (640 pixels wide). Sets the scroll limits.
 
@@ -659,8 +661,185 @@ zoom_out:
 	lsr.w	#4,d0
 	subi.w	#40,d0
 	mulu.w	screen_planes(pc),d0
-	move.w	d0,(line_offset).l
-	move.w	d0,($ffff820e).w					; write vid_lineoffset [Falcon]
+	bra.w	set_view
+
+;	v1.2: Sets the Videl line offset for the current resolution (d0 = words
+;	per line beyond the visible part). The line offset register has 9 bits,
+;	so in true colour pictures wider than 816 pixels (low resolution) or
+;	1136 pixels (high resolution) can't be scrolled by the Videl. Those are
+;	shown through a view buffer instead: the visible part is copied into it
+;	when the scroll position changes (update_view).
+
+set_view:
+	move.l	d0,d6
+	clr.w	(view_mode).l
+	bsr.w	view_free
+	cmp.l	#511,d6
+	bls.w	.offset
+
+	move.w	#200,d4								; d4 = visible lines
+	tst.w	(monitor).l
+	bpl.s	.lines
+	move.w	#240,d4
+.lines:
+	move.w	#320,d3								; d3 = visible pixels
+	tst.w	(high_res).l
+	beq.s	.size
+	add.w	d3,d3
+	add.w	d4,d4
+.size:
+	moveq	#0,d5								; d5 = line offset of the view
+	move.w	screen_planes(pc),d0
+	cmp.w	#16,d0
+	beq.s	.true_color
+	lsr.w	#4,d3								; Bitplanes: 16 pixels more for
+	addq.w	#1,d3								; fine scrolling, skipped with
+	mulu.w	d0,d3								; the line offset when not needed.
+	move.w	d0,d5
+.true_color:
+	add.w	d3,d3								; d3 = bytes per view line
+	move.w	d3,(view_pitch).l
+	move.w	d4,(view_lines).l
+	mulu.w	d3,d4								; d4 = bytes per view buffer
+	move.l	d4,d0
+	add.l	d0,d0
+	addq.l	#4,d0
+	move.l	d0,-(a7)							; Two view buffers
+	move.w	#72,-(a7)							; Malloc
+	trap	#1
+	addq.l	#6,a7
+	tst.l	d0
+	beq.s	.offset								; No memory: as before.
+	move.l	d0,(view_block).l
+	addq.l	#3,d0
+	andi.w	#$fffc,d0
+	move.l	d0,(view_back).l
+	add.l	d4,d0
+	move.l	d0,(view_front).l
+	clr.l	(view_switched).l
+	move.l	d5,d6
+	bsr.w	copy_view
+	move.w	#1,(view_mode).l
+.offset:
+	move.w	d6,(line_offset).l
+	move.w	d6,($ffff820e).w					; write vid_lineoffset [Falcon]
+	rts
+
+;	Frees the view buffers.
+
+view_free:
+	move.l	(view_block).l,d0
+	beq.s	.done
+	clr.l	(view_block).l
+	move.l	d0,-(a7)
+	move.w	#73,-(a7)							; Mfree
+	trap	#1
+	addq.l	#6,a7
+.done:
+	rts
+
+;	Called from the main loop: copies the visible part of the picture into
+;	the view buffer again if the scroll position has changed.
+
+update_view:
+	tst.w	(view_mode).l
+	beq.s	.done
+	move.w	(scroll_x).l,d0
+	cmp.w	(view_x).l,d0
+	bne.s	copy_view
+	move.w	(scroll_y).l,d0
+	cmp.w	(view_y).l,d0
+	bne.s	copy_view
+.done:
+	rts
+
+;	Copies the visible part of the picture into the back view buffer, then
+;	makes the VBL show it. Waits until the back buffer is no longer shown:
+;	the VBL shows a new front buffer from the second VBL after the switch.
+
+copy_view:
+	movem.l	d0-d7/a0-a1,-(a7)
+.wait:
+	move.l	($466).w,d0							; _frclock
+	sub.l	(view_switched).l,d0
+	cmp.l	#2,d0
+	blo.s	.wait
+
+	move.w	(scroll_x).l,d0						; Scroll position within the
+	cmp.w	(scroll_min_x).l,d0					; limits, as the VBL will set it
+	bge.s	.x_min
+	move.w	(scroll_min_x).l,d0
+.x_min:
+	cmp.w	(scroll_max_x).l,d0
+	ble.s	.x_max
+	move.w	(scroll_max_x).l,d0
+.x_max:
+	move.w	(scroll_y).l,d1
+	cmp.w	(scroll_min_y).l,d1
+	bge.s	.y_min
+	move.w	(scroll_min_y).l,d1
+.y_min:
+	cmp.w	(scroll_max_y).l,d1
+	ble.s	.y_max
+	move.w	(scroll_max_y).l,d1
+.y_max:
+	move.w	d0,(view_x).l
+	move.w	d1,(view_y).l
+
+	moveq	#0,d2
+	move.w	(screen_width).l,d2
+	lsr.w	#3,d2
+	mulu.w	(screen_planes).l,d2				; d2 = bytes per screen line
+	move.l	d2,d3
+	mulu.w	d1,d3								; d3 = offset of the first line
+	moveq	#0,d4								; d4 = fine scroll
+	moveq	#0,d5
+	move.w	d0,d5
+	cmpi.w	#16,(screen_planes).l
+	bne.s	.bitplanes
+	andi.w	#$fffe,d5							; True colour: 2 pixels aligned
+	add.l	d5,d5
+	bra.s	.source
+.bitplanes:
+	move.w	d5,d4
+	andi.w	#15,d4
+	lsr.w	#4,d5
+	mulu.w	(screen_planes).l,d5
+	add.l	d5,d5
+.source:
+	add.l	d5,d3
+	movea.l	(screen).l,a0
+	adda.l	d3,a0
+	movea.l	(view_back).l,a1
+	moveq	#0,d6
+	move.w	(view_pitch).l,d6					; d6 = bytes per view line
+	sub.l	d6,d2								; d2 = rest of a screen line
+	move.w	d6,d5
+	lsr.w	#2,d5
+	subq.w	#1,d5								; d5 = long words per line - 1
+	move.w	(view_lines).l,d7
+	subq.w	#1,d7
+.line:
+	move.w	d5,d3
+.long:
+	move.l	(a0)+,(a1)+
+	dbra	d3,.long
+	btst	#1,d6
+	beq.s	.next
+	move.w	(a0)+,(a1)+
+.next:
+	adda.l	d2,a0
+	dbra	d7,.line
+
+	move.l	(view_front).l,d0					; Switch the buffers.
+	move.w	sr,-(a7)
+	ori.w	#$0700,sr
+	move.l	(view_back).l,(view_front).l
+	move.w	d4,(view_hscroll).l
+	move.w	(a7)+,sr
+	move.l	d0,(view_back).l
+	move.l	($466).w,(view_switched).l
+	movem.l	(a7)+,d0-d7/a0-a1
 	rts
 
 ;	Cursor keys: scroll 4 pixels.
@@ -973,6 +1152,8 @@ vbl_handler:
 .y_ok:
 	move.w	d0,(scroll_y).l
 	clr.w	(scroll_dy).l
+	tst.w	(view_mode).l
+	bne.s	.view
 	move.w	screen_width(pc),d0
 	lsr.w	#3,d0
 	mulu.w	screen_planes(pc),d0
@@ -1003,6 +1184,17 @@ vbl_handler:
 .set_screen:
 	add.l	screen(pc),d0
 	move.l	d0,(vbl_screen).l
+	bra.s	.done
+.view:
+	move.w	line_offset(pc),(vbl_line_offset).l	; v1.2: view buffer, see set_view
+	move.w	(view_hscroll).l,d1
+	beq.s	.view_no_fine_scroll
+	move.w	screen_planes(pc),d2
+	sub.w	d2,(vbl_line_offset).l
+.view_no_fine_scroll:
+	move.w	d1,(vbl_hscroll).l
+	move.l	(view_front).l,(vbl_screen).l
+.done:
 	movem.l	(a7)+,d0-d7/a0-a6
 	move.l	old_vbl(pc),-(a7)
 	move.w	#$ffff,(vbl_ready).l
@@ -4394,3 +4586,24 @@ q16_pixels:										; q16_pixels and q16_alpha must
 	ds.b	4									; stay together, see q16_free.
 q16_alpha:
 	ds.b	4
+	even
+view_mode:										; v1.2: 1 = show the view buffer
+	ds.w	1
+view_block:										; Memory block of the two view
+	ds.l	1									; buffers, 0 if none
+view_front:										; Shown view buffer
+	ds.l	1
+view_back:										; View buffer to copy into
+	ds.l	1
+view_switched:									; _frclock when they were switched
+	ds.l	1
+view_pitch:										; Bytes per view buffer line
+	ds.w	1
+view_lines:										; Lines in a view buffer
+	ds.w	1
+view_x:											; Scroll position of the front
+	ds.w	1									; buffer, -1 to copy again
+view_y:
+	ds.w	1
+view_hscroll:									; Fine scroll of the front buffer
+	ds.w	1
